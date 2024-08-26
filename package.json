@@ -44,7 +44,7 @@
     },
     "homepage": "https://github.com/authup/authup#readme",
     "dependencies": {
-        "locter": "^2.1.0",
+        "locter": "^2.1.1",
         "smob": "^1.5.0"
     },
     "devDependencies": {
