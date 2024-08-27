@@ -17,13 +17,13 @@
         "dist"
     ],
     "scripts": {
-        "cli": "node dist/index.cjs",
-        "cli-dev": "npm run build && npm run cli",
         "build:types": "tsc --emitDeclarationOnly -p tsconfig.json",
         "build:js": "rollup -c",
         "build": "rimraf ./dist && cross-env NODE_ENV=production npm run build:js && npm run build:types",
         "test": "cross-env NODE_ENV=test jest --config ./test/jest.config.js",
-        "test:coverage": "npm run test -- --coverage"
+        "test:coverage": "npm run test -- --coverage",
+        "lint": "eslint --ext .js,.vue,.ts ./src ./test",
+        "lint:fix": "npm run lint -- --fix"
     },
     "bin": {
         "authup": "dist/index.cjs"

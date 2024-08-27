@@ -36,72 +36,55 @@ export class Container {
             this.itemsSorted = true;
         }
 
-        let output = {};
-        let matches = 0;
+        let output : unknown | undefined;
 
         if (Array.isArray(key)) {
             for (let i = 0; i < key.length; i++) {
                 const value = this.get(key[i]);
-                if (typeof value !== 'undefined') {
-                    if (isObject(value)) {
-                        output = this.options.mergeFn(value, output);
-                        matches++;
-                    } else {
-                        if (matches > 0) {
-                            return output as T;
-                        }
-
-                        return value as T;
-                    }
+                if (typeof output !== 'undefined') {
+                    output = this.merge(value, output);
+                } else {
+                    output = value;
                 }
             }
-        } else {
-            for (let i = 0; i < this.items.length; i++) {
-                let temp: string;
-                if (this.items[i].name) {
-                    if (key.length > 0) {
-                        if (key === this.items[i].name) {
-                            temp = '';
-                        } else if (key.startsWith(this.items[i].name)) {
-                            let startIndex = this.items[i].name.length;
-                            if (key.charAt(startIndex) === '.') {
-                                startIndex++;
-                            }
-                            temp = key.substring(startIndex);
-                        } else {
-                            continue;
+
+            return output as T;
+        }
+
+        for (let i = 0; i < this.items.length; i++) {
+            let temp: string;
+            if (this.items[i].name) {
+                if (key.length > 0) {
+                    if (key === this.items[i].name) {
+                        temp = '';
+                    } else if (key.startsWith(this.items[i].name)) {
+                        let startIndex = this.items[i].name.length;
+                        if (key.charAt(startIndex) === '.') {
+                            startIndex++;
                         }
+                        temp = key.substring(startIndex);
                     } else {
-                        temp = key;
+                        continue;
                     }
                 } else {
                     temp = key;
                 }
-
-                let value: unknown;
-                if (temp.length === 0) {
-                    value = this.items[i].data;
-                } else {
-                    value = getPropertyPathValue(this.items[i].data, temp);
-                }
-
-                if (typeof value !== 'undefined') {
-                    if (isObject(value)) {
-                        output = this.options.mergeFn(value, output);
-                        matches++;
-                    } else {
-                        if (matches > 0) {
-                            return output as T;
-                        }
-
-                        return value as T;
-                    }
-                }
+            } else {
+                temp = key;
             }
-        }
 
-        if (matches === 0) {
-            return undefined;
+            let value: unknown;
+            if (temp.length === 0) {
+                value = this.items[i].data;
+            } else {
+                value = getPropertyPathValue(this.items[i].data, temp);
+            }
+
+            if (typeof output !== 'undefined') {
+                output = this.merge(value, output);
+            } else {
+                output = value;
+            }
         }
 
         return output as T;
@@ -263,5 +246,20 @@ export class Container {
             mergeFn,
             extensions,
         };
+    }
+
+    protected merge(primary: unknown | undefined, secondary: unknown) {
+        if (typeof primary === 'undefined') {
+            return secondary;
+        }
+
+        if (
+            isObject(primary) &&
+            isObject(secondary)
+        ) {
+            return this.options.mergeFn(primary, secondary);
+        }
+
+        return primary;
     }
 }
