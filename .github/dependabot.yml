@@ -14,7 +14,7 @@ updates:
           interval: "daily"
       versioning-strategy: "increase"
       open-pull-requests-limit: 20
-      target-branch: "master"
+      target-branch: "develop"
       commit-message:
           prefix: "fix"
           prefix-development: "build"
