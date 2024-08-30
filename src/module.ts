@@ -12,10 +12,10 @@ import {
 } from 'locter';
 import path from 'node:path';
 import { createMerger, isObject } from 'smob';
+import { getPathInfo } from 'pathtrace';
 import type {
     Element, MergeFn, NormalizedOptions, Options,
 } from './types';
-import { getPropertyPathValue } from './object-path';
 
 export class Container {
     protected items : Element[];
@@ -36,7 +36,7 @@ export class Container {
             this.itemsSorted = true;
         }
 
-        let output : unknown | undefined;
+        let output : unknown;
 
         if (Array.isArray(key)) {
             for (let i = 0; i < key.length; i++) {
@@ -73,17 +73,13 @@ export class Container {
                 temp = key;
             }
 
-            let value: unknown;
             if (temp.length === 0) {
-                value = this.items[i].data;
+                output = this.merge(this.items[i].data, output);
             } else {
-                value = getPropertyPathValue(this.items[i].data, temp);
-            }
-
-            if (typeof output !== 'undefined') {
-                output = this.merge(value, output);
-            } else {
-                output = value;
+                const info = getPathInfo(this.items[i].data, temp);
+                if (info.exists) {
+                    output = this.merge(info.value, output);
+                }
             }
         }
 
