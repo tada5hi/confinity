@@ -34,7 +34,7 @@
         "email": "contact@tada5hi.net",
         "url": "https://github.com/tada5hi"
     },
-    "license": "Apache-2.0",
+    "license": "MIT",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/tada5hi/confinity.git"
@@ -45,7 +45,7 @@
     "homepage": "https://github.com/tada5hi/confinity#readme",
     "dependencies": {
         "locter": "^2.1.0",
-        "pathtrace": "^1.0.0-beta.2",
+        "pathtrace": "^1.0.0",
         "smob": "^1.5.0"
     },
     "devDependencies": {
