@@ -57,7 +57,7 @@
         "@tada5hi/semantic-release": "^0.3.1",
         "@tada5hi/tsconfig": "^0.5.1",
         "@types/jest": "^29.5.12",
-        "@types/node": "^22.5.2",
+        "@types/node": "^22.5.4",
         "@types/pathval": "^1.1.2",
         "cross-env": "^7.0.3",
         "eslint": "^8.37.0",
