@@ -12,7 +12,7 @@ import {
 } from 'locter';
 import path from 'node:path';
 import { createMerger, isObject } from 'smob';
-import { getPathInfo } from 'pathtrace';
+import { expandPath, getPathInfo } from 'pathtrace';
 import type {
     Element, MergeFn, NormalizedOptions, Options,
 } from './types';
@@ -76,9 +76,12 @@ export class Container {
             if (temp.length === 0) {
                 output = this.merge(this.items[i].data, output);
             } else {
-                const info = getPathInfo(this.items[i].data, temp);
-                if (info.exists) {
-                    output = this.merge(info.value, output);
+                const paths = expandPath(this.items[i].data, temp);
+                for (let j = 0; j < paths.length; j++) {
+                    const info = getPathInfo(this.items[i].data, paths[j]);
+                    if (info.exists) {
+                        output = this.merge(info.value, output);
+                    }
                 }
             }
         }
