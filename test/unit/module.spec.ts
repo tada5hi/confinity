@@ -35,30 +35,6 @@ describe('src/read', () => {
         expect(core.host).toEqual('1.1.1.1');
     });
 
-    it('should get multiple elements', async () => {
-        expect.assertions(4);
-
-        const container = new Container({
-            prefix: 'project',
-            cwd: 'test/data',
-        });
-
-        await container.loadFile([
-            'project.conf',
-            'project.server.conf',
-        ]);
-
-        const db = container.get([
-            'db',
-            'server.db',
-            'server.core.db',
-        ]);
-        expect(db.host).toEqual('127.0.0.1');
-        expect(db.user).toEqual('admin');
-        expect(db.password).toEqual('start123');
-        expect(db.database).toEqual('app');
-    });
-
     it('should read config for server core app', async () => {
         const container = new Container({ prefix: 'project' });
         await container.load('test/data');

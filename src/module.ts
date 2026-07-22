@@ -12,84 +12,25 @@ import {
 } from 'locter';
 import path from 'node:path';
 import { createMerger, isObject } from 'smob';
-import { expandPath, getPathInfo } from 'pathtrace';
+import { Resolver } from './resolver';
 import type {
-    Element,
     MergeFn,
     NormalizedOptions,
     Options,
 } from './types';
 
 export class Container {
-    protected items : Element[];
-
-    protected itemsSorted : boolean;
+    protected resolver : Resolver;
 
     protected readonly options : NormalizedOptions;
 
     constructor(options: Options = {}) {
         this.options = this.normalizeOptions(options);
-        this.items = [];
-        this.itemsSorted = true;
+        this.resolver = new Resolver({ mergeFn: this.options.mergeFn });
     }
 
     get<T = any>(key: string | string[]) : T | undefined {
-        if (!this.itemsSorted) {
-            this.items.sort((a, b) => a.name.localeCompare(b.name));
-            this.itemsSorted = true;
-        }
-
-        let output : unknown;
-
-        if (Array.isArray(key)) {
-            for (const keyItem of key) {
-                const value = this.get(keyItem);
-                if (typeof output !== 'undefined') {
-                    output = this.merge(value, output);
-                } else {
-                    output = value;
-                }
-            }
-
-            return output as T;
-        }
-
-        for (const item of this.items) {
-            let temp: string;
-            if (item.name) {
-                if (key.length > 0) {
-                    if (key === item.name) {
-                        temp = '';
-                    } else if (key.startsWith(item.name)) {
-                        let startIndex = item.name.length;
-                        if (key.charAt(startIndex) === '.') {
-                            startIndex++;
-                        }
-                        temp = key.substring(startIndex);
-                    } else {
-                        continue;
-                    }
-                } else {
-                    temp = key;
-                }
-            } else {
-                temp = key;
-            }
-
-            if (temp.length === 0) {
-                output = this.merge(item.data, output);
-            } else {
-                const paths = expandPath(item.data, temp);
-                for (const expandedPath of paths) {
-                    const info = getPathInfo(item.data, expandedPath);
-                    if (info.exists) {
-                        output = this.merge(info.value, output);
-                    }
-                }
-            }
-        }
-
-        return output as T;
+        return this.resolver.get<T>(key);
     }
 
     /**
@@ -176,12 +117,10 @@ export class Container {
             name = name.substring(0, startIndex);
         }
 
-        this.items.push({
-            data,
+        this.resolver.add({
             name,
+            data,
         });
-
-        this.itemsSorted = false;
     }
 
     protected async findFiles(cwd?: string[] | string) : Promise<string[]> {
@@ -248,20 +187,5 @@ export class Container {
             mergeFn,
             extensions,
         };
-    }
-
-    protected merge(primary: unknown | undefined, secondary: unknown) {
-        if (typeof primary === 'undefined') {
-            return secondary;
-        }
-
-        if (
-            isObject(primary) &&
-            isObject(secondary)
-        ) {
-            return this.options.mergeFn(primary, secondary);
-        }
-
-        return primary;
     }
 }
