@@ -7,14 +7,17 @@
 
 import {
     buildFilePath,
-    load,
     locateMany,
+    read,
 } from 'locter';
 import path from 'node:path';
 import { createMerger, isObject } from 'smob';
 import { expandPath, getPathInfo } from 'pathtrace';
 import type {
-    Element, MergeFn, NormalizedOptions, Options,
+    Element,
+    MergeFn,
+    NormalizedOptions,
+    Options,
 } from './types';
 
 export class Container {
@@ -39,8 +42,8 @@ export class Container {
         let output : unknown;
 
         if (Array.isArray(key)) {
-            for (let i = 0; i < key.length; i++) {
-                const value = this.get(key[i]);
+            for (const keyItem of key) {
+                const value = this.get(keyItem);
                 if (typeof output !== 'undefined') {
                     output = this.merge(value, output);
                 } else {
@@ -51,14 +54,14 @@ export class Container {
             return output as T;
         }
 
-        for (let i = 0; i < this.items.length; i++) {
+        for (const item of this.items) {
             let temp: string;
-            if (this.items[i].name) {
+            if (item.name) {
                 if (key.length > 0) {
-                    if (key === this.items[i].name) {
+                    if (key === item.name) {
                         temp = '';
-                    } else if (key.startsWith(this.items[i].name)) {
-                        let startIndex = this.items[i].name.length;
+                    } else if (key.startsWith(item.name)) {
+                        let startIndex = item.name.length;
                         if (key.charAt(startIndex) === '.') {
                             startIndex++;
                         }
@@ -74,11 +77,11 @@ export class Container {
             }
 
             if (temp.length === 0) {
-                output = this.merge(this.items[i].data, output);
+                output = this.merge(item.data, output);
             } else {
-                const paths = expandPath(this.items[i].data, temp);
-                for (let j = 0; j < paths.length; j++) {
-                    const info = getPathInfo(this.items[i].data, paths[j]);
+                const paths = expandPath(item.data, temp);
+                for (const expandedPath of paths) {
+                    const info = getPathInfo(item.data, expandedPath);
                     if (info.exists) {
                         output = this.merge(info.value, output);
                     }
@@ -105,11 +108,11 @@ export class Container {
         }
 
         if (directories.length > 0) {
-            for (let i = 0; i < directories.length; i++) {
-                if (!path.isAbsolute(directories[i])) {
-                    directories[i] = path.resolve(this.options.cwd, directories[i]);
-                }
-            }
+            directories = directories.map((directory) => (
+                path.isAbsolute(directory) ?
+                    directory :
+                    path.resolve(this.options.cwd, directory)
+            ));
         } else {
             directories = [this.options.cwd];
         }
@@ -135,7 +138,7 @@ export class Container {
             input = path.resolve(this.options.cwd, input);
         }
 
-        const file = await load(input);
+        const file = await read(input);
         const data = file.default ? file.default : file;
 
         if (!isObject(data)) {
@@ -181,7 +184,7 @@ export class Container {
         this.itemsSorted = false;
     }
 
-    protected async findFiles(path?: string[] | string) : Promise<string[]> {
+    protected async findFiles(cwd?: string[] | string) : Promise<string[]> {
         const patterns : string[] = [];
         const extension = `{${this.options.extensions.join(',')}}`;
 
@@ -189,22 +192,22 @@ export class Container {
             this.options.prefix &&
             this.options.suffix
         ) {
-            patterns.push(`${this.options.prefix}.**.${this.options.suffix}.${extension}`);
+            patterns.push(`${this.options.prefix}.*.${this.options.suffix}.${extension}`);
         } else if (this.options.prefix) {
             patterns.push(
                 `${this.options.prefix}.${extension}`,
-                `${this.options.prefix}.**.${extension}`,
+                `${this.options.prefix}.*.${extension}`,
             );
         } else if (this.options.suffix) {
             patterns.push(
                 `${this.options.suffix}.${extension}`,
-                `**.${this.options.suffix}.${extension}`,
+                `*.${this.options.suffix}.${extension}`,
             );
         } else {
-            patterns.push(`**.${extension}`);
+            patterns.push(`*.${extension}`);
         }
 
-        const locations = await locateMany(patterns, { path, onlyFiles: true });
+        const locations = await locateMany(patterns, { cwd, onlyFiles: true });
 
         return locations.map(
             (location) => buildFilePath(location),
