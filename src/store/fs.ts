@@ -8,51 +8,62 @@
 import {
     buildFilePath,
     locateMany,
-    read,
+    read as readFile,
 } from 'locter';
 import path from 'node:path';
 import { isObject } from 'smob';
-import type { NamingScheme } from './naming';
-import type { Element } from './types';
+import type { INamingScheme } from '../naming';
+import type { Element } from '../types';
+import { Store } from './module';
+import type { FSStoreOptions, Reader } from './types';
 
 /**
- * Minimal reader port. Parses a file at the given path into its raw value.
- * Defaults to locter's `read`; can be substituted to unit-test the loader's
- * naming/skip logic without touching the filesystem.
+ * A {@see Store} that can populate itself from the filesystem. Adds `load` and
+ * `loadFile` on top of the in-memory store, owning directory resolution, glob
+ * discovery (via the {@see INamingScheme}), parsing (incl. the `.default`
+ * unwrap and the non-object skip), and parallel loads. The parsing dependency
+ * is a {@see Reader} port, defaulting to locter's `read`.
  */
-export type Reader = (filePath: string) => Promise<unknown>;
-
-export interface LoaderOptions {
-    cwd: string,
-    naming: NamingScheme,
-    read?: Reader
-}
-
-/**
- * Filesystem-facing producer of config elements. Owns directory resolution,
- * glob discovery, parsing (incl. the `.default` unwrap and the non-object skip),
- * parallel loads, and name derivation via the {@see NamingScheme}.
- */
-export class Loader {
+export class FSStore extends Store {
     protected readonly cwd : string;
 
-    protected readonly naming : NamingScheme;
+    protected readonly naming : INamingScheme;
 
-    protected readonly read : Reader;
+    protected readonly reader : Reader;
 
-    constructor(options: LoaderOptions) {
+    constructor(options: FSStoreOptions) {
+        super({ mergeFn: options.mergeFn });
         this.cwd = options.cwd;
         this.naming = options.naming;
-        this.read = options.read ?? read;
+        this.reader = options.read ?? readFile;
     }
 
     /**
-     * Discover + parse config files across one or many directories
+     * Discover, parse and store config files from one or many directories
      * (defaults to the configured cwd).
      *
      * @param input
      */
-    async fromDirectories(input?: string | string[]) : Promise<Element[]> {
+    async load(input?: string | string[]) : Promise<void> {
+        const elements = await this.fromDirectories(input);
+        for (const element of elements) {
+            this.add(element);
+        }
+    }
+
+    /**
+     * Parse and store specific file(s), deriving each name via the NamingScheme.
+     *
+     * @param input
+     */
+    async loadFile(input: string | string[]) : Promise<void> {
+        const elements = await this.fromFiles(input);
+        for (const element of elements) {
+            this.add(element);
+        }
+    }
+
+    protected async fromDirectories(input?: string | string[]) : Promise<Element[]> {
         let directories : string[] = [];
         if (input) {
             if (Array.isArray(input)) {
@@ -77,12 +88,7 @@ export class Loader {
         return this.fromFiles(filePaths);
     }
 
-    /**
-     * Parse specific file(s), deriving each element name via the NamingScheme.
-     *
-     * @param input
-     */
-    async fromFiles(input: string | string[]) : Promise<Element[]> {
+    protected async fromFiles(input: string | string[]) : Promise<Element[]> {
         if (Array.isArray(input)) {
             const promises = input.map((el) => this.fromFiles(el));
             const results = await Promise.all(promises);
@@ -94,7 +100,7 @@ export class Loader {
             filePath = path.resolve(this.cwd, filePath);
         }
 
-        const file = await this.read(filePath);
+        const file = await this.reader(filePath);
         const data = isObject(file) && file.default ? file.default : file;
 
         if (!isObject(data)) {

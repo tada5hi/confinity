@@ -1,6 +1,8 @@
 # Plan 002 — Extract a `NamingScheme`
 
-**Status:** proposed · **Candidate:** 2 of 3 · **Dependency category:** In-process (pure)
+**Status:** superseded by [003](003-loader-store-split.md) · **Candidate:** 2 of 3 · **Dependency category:** In-process (pure)
+
+> Shipped as the `NamingScheme` class (`src/naming/module.ts`), implementing the `INamingScheme` interface — see plan 003.
 
 ## Problem
 

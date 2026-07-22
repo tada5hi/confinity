@@ -7,17 +7,15 @@
 
 import { expandPath, getPathInfo } from 'pathtrace';
 import { createMerger, isObject } from 'smob';
-import type { Element, MergeFn } from './types';
-
-export interface StoreOptions {
-    mergeFn?: MergeFn
-}
+import type { Element, MergeFn } from '../types';
+import type { IStore, StoreOptions } from './types';
 
 /**
- * In-memory store of named config elements. Owns the element array, its lazy
- * sort, key↔name matching, path resolution (via pathtrace), and merge precedence.
+ * Default {@see IStore} implementation: an in-memory store of named config
+ * elements. Owns the element array, its lazy sort, key↔name matching, path
+ * resolution (via pathtrace), and merge precedence.
  */
-export class Store {
+export class Store implements IStore {
     protected items : Element[];
 
     protected itemsSorted : boolean;
@@ -33,21 +31,11 @@ export class Store {
         });
     }
 
-    /**
-     * Add a named config element to the store.
-     *
-     * @param element
-     */
     add(element: Element) : void {
         this.items.push(element);
         this.itemsSorted = false;
     }
 
-    /**
-     * Resolve a dotted key (or array of keys), deep-merged across all elements.
-     *
-     * @param key
-     */
     get<T = any>(key: string | string[]) : T | undefined {
         if (!this.itemsSorted) {
             this.items.sort((a, b) => a.name.localeCompare(b.name));

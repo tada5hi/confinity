@@ -5,36 +5,27 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export interface NamingSchemeOptions {
-    prefix?: string,
-    suffix?: string,
-    /**
-     * Already normalized extensions (no leading dot).
-     */
-    extensions: string[]
-}
+import type { INamingScheme, NamingOptions } from './types';
 
 /**
- * Owns both directions of the prefix/suffix/extensions convention:
- * building the glob patterns that discover files (convention → patterns) and
- * deriving an element name from a file path (path → name).
+ * Default {@see Naming} implementation. Owns both directions of the
+ * prefix/suffix/extensions convention: building the glob patterns that discover
+ * files (convention → patterns) and deriving an element name from a file path
+ * (path → name).
  */
-export class NamingScheme {
+export class NamingScheme implements INamingScheme {
     protected readonly prefix : string | undefined;
 
     protected readonly suffix : string | undefined;
 
     protected readonly extensions : string[];
 
-    constructor(options: NamingSchemeOptions) {
+    constructor(options: NamingOptions) {
         this.prefix = options.prefix;
         this.suffix = options.suffix;
         this.extensions = options.extensions;
     }
 
-    /**
-     * Glob patterns that match files following this convention (non-recursive).
-     */
     toPatterns() : string[] {
         const patterns : string[] = [];
         const extension = `{${this.extensions.join(',')}}`;
@@ -61,12 +52,6 @@ export class NamingScheme {
         return patterns;
     }
 
-    /**
-     * Derive the element name from a file path
-     * (base name, prefix/suffix stripped).
-     *
-     * @param filePath
-     */
     toName(filePath: string) : string {
         let inputNormalized = filePath.replace(/\\/g, '/');
         if (inputNormalized.includes('/')) {

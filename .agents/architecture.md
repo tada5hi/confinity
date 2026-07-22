@@ -2,15 +2,21 @@
 
 ## Overview
 
-Confinity is organized around one class, `Container` (`src/module.ts`), which implements a **load → store → merge → get** pipeline. Config files are discovered and parsed, each stored as a named `Element` (`{ name, data }`), and later queried by dotted key. A query walks every stored element, resolves the requested path within each, and merges all matches into a single result. All I/O, path resolution, and merging are delegated to the three runtime dependencies (`locter`, `pathtrace`, `smob`), keeping `Container` focused on orchestration, name derivation, and merge precedence.
+Confinity's public entry point is the `createStore()` factory (`src/module.ts`), which wires a `NamingScheme` into an `FSStore` and returns it. `FSStore extends Store`, so a single object exposes both the filesystem concern (`load`/`loadFile`) and the pure query engine (`add`/`get`). Together they implement a **load → store → merge → get** pipeline: config files are discovered and parsed, each stored as a named `Element` (`{ name, data }`), and later queried by dotted key. A query walks every stored element, resolves the requested path within each, and merges all matches into a single result. All I/O, path resolution, and merging are delegated to the three runtime dependencies (`locter`, `pathtrace`, `smob`), keeping the code focused on orchestration, name derivation, and merge precedence.
 
 ```
-directories/files ──► [locter: locate + parse] ──► Element[] { name, data }
+createStore(options) ──► NamingScheme ──► FSStore extends Store
+                                              │
+directories/files ──► [locter: locate + parse via Reader] ──► Element[] { name, data }
                                                         │
                               get(key) ────────────────►│  match key vs each Element.name
                                                         │  resolve remainder via pathtrace
                                                         └► merge matches via smob ──► value
 ```
+
+- **`NamingScheme`** (`src/naming/module.ts`, implements `INamingScheme`) owns the prefix/suffix/extensions convention in both directions: `toPatterns()` (convention → glob) and `toName(path)` (path → element name).
+- **`Store`** (`src/store/module.ts`, implements `IStore`) is the pure, in-memory query/merge engine: it owns the element array, its lazy sort, key↔name matching, path resolution, and merge precedence.
+- **`FSStore`** (`src/store/fs.ts`) adds the filesystem concern on top of `Store`: directory resolution, glob discovery (via the naming scheme), and parsing through a `Reader` port.
 
 ## Core Concepts
 
@@ -23,7 +29,7 @@ export type Element = {
 };
 ```
 
-Elements are held in `Container.items` and kept sorted by `name` (lazily, the first time `get` runs after a load). Sorting makes lookup order deterministic.
+Elements are held in `Store.items` and kept sorted by `name` (lazily, the first time `get` runs after a load). Sorting makes lookup order deterministic.
 
 ### Options
 
@@ -33,18 +39,20 @@ export type Options = {
     prefix?: string,            // file-name prefix, e.g. "project"
     suffix?: string,            // file-name suffix
     extensions?: string[],      // default: conf, js, mjs, cjs, ts, mts, yml, yaml
-    mergeFn?: MergeFn           // default: smob createMerger({ array:false, inPlace:false })
+    mergeFn?: MergeFn,          // default: smob createMerger({ array:false, inPlace:false })
+    naming?: INamingScheme,     // custom convention; overrides prefix/suffix/extensions
+    read?: Reader               // custom parser; overrides the default (locter's read)
 };
 ```
 
-`normalizeOptions` fills defaults and strips any leading `.` from extensions, producing `NormalizedOptions` (same shape but with `cwd`, `extensions`, and `mergeFn` required).
+`createStore` normalizes the options: it strips any leading `.` from `extensions`, defaults `cwd` to `process.cwd()`, and builds a `NamingScheme` from `prefix`/`suffix`/`extensions` — unless a custom `naming` is supplied, in which case those three are ignored. `store` is **not** an option; the factory constructs the `FSStore`. The `naming` and `read` fields are the two injection points that let callers substitute the convention or the parser.
 
 ## Data Flow
 
-### 1. Discovery — `load(input?)` → `findFiles()`
+### 1. Discovery — `FSStore.load(input?)` → `findFiles()`
 
-- `input` may be a single directory, an array of directories, or omitted (falls back to `cwd`). Relative directories are resolved against `options.cwd`.
-- `findFiles` builds glob patterns from `prefix`/`suffix`/`extensions`, then calls `locter.locateMany(patterns, { cwd, onlyFiles: true })` — the search directory is passed as `cwd`. Pattern selection:
+- `input` may be a single directory, an array of directories, or omitted (falls back to `cwd`). Relative directories are resolved against `cwd`.
+- `findFiles` calls `naming.toPatterns()` to build glob patterns, then `locter.locateMany(patterns, { cwd, onlyFiles: true })` — the search directory is passed as `cwd`. Pattern selection (owned by `NamingScheme`):
 
   | prefix | suffix | patterns                                                        |
   |--------|--------|-----------------------------------------------------------------|
@@ -55,15 +63,15 @@ export type Options = {
 
   where `{ext}` expands to `{conf,js,mjs,...}`. The single `*` matches one filename segment (any characters except a path separator), so discovery is non-recursive — it does **not** descend into subdirectories. A prefix+suffix pattern therefore requires a middle segment (`project.server.conf` is not matched by `project.*.server.{ext}`).
 
-### 2. Loading — `loadFile(input)`
+### 2. Loading — `FSStore.loadFile(input)`
 
-- Accepts a single path or an array (loaded in parallel via `Promise.all`). Relative paths resolve against `options.cwd`.
-- Parses through `locter.read()`; uses `file.default` when present (module configs with `export default` return a record whose `.default` holds the value; plain data files — `.conf`, `.yml`, `.json` — return the parsed object directly).
+- Accepts a single path or an array (loaded in parallel via `Promise.all`). Relative paths resolve against `cwd`.
+- Parses through the `Reader` port (`read(filePath)`), which defaults to `locter.read()`; substitute it via `Options.read`. Uses `file.default` when present (module configs with `export default` return a record whose `.default` holds the value; plain data files — `.conf`, `.yml`, `.json` — return the parsed object directly).
 - **Skips** anything that is not a plain object (`smob.isObject`).
-- Derives `name` from the base file name: strip directory and extension, then strip a configured `prefix`/`suffix` (and the adjoining `.`). Example: with `prefix: "project"`, `project.server.conf` → name `server`.
-- Pushes `{ data, name }` onto `items` and marks the list unsorted.
+- Derives `name` via `naming.toName(filePath)`: strip directory and extension, then strip a configured `prefix`/`suffix` (and the adjoining `.`). Example: with `prefix: "project"`, `project.server.conf` → name `server`.
+- `add`s `{ data, name }` to the store, marking the list unsorted.
 
-### 3. Lookup — `get<T>(key)`
+### 3. Lookup — `Store.get<T>(key)`
 
 - Ensures `items` is sorted by `name` first.
 - **Array key**: resolves each key in turn and merges the results together (`output = merge(value, output)`), so later keys take precedence for scalars.
@@ -75,13 +83,13 @@ export type Options = {
 - The remainder is resolved with `pathtrace.expandPath` (expands wildcards) + `getPathInfo`; only existing values are merged in.
 - Returns the accumulated `output` cast to `T` (or `undefined`).
 
-### 4. Merge — `merge(primary, secondary)`
+### 4. Merge — `Store.merge(primary, secondary)`
 
 ```typescript
 protected merge(primary: unknown | undefined, secondary: unknown) {
     if (typeof primary === 'undefined') return secondary;         // nothing new
     if (isObject(primary) && isObject(secondary)) {
-        return this.options.mergeFn(primary, secondary);          // deep merge
+        return this.mergeFn(primary, secondary);                  // deep merge
     }
     return primary;                                               // scalar: primary wins
 }
@@ -93,24 +101,32 @@ protected merge(primary: unknown | undefined, secondary: unknown) {
 ## Design Decisions
 
 ### Thin core, delegated capabilities
-File formats, glob semantics, path syntax, and merge strategy are **not** reimplemented — they come from `locter`, `pathtrace`, and `smob`. To support a new file type, prefer configuring/extending those dependencies over adding parsing logic to `Container`.
+File formats, glob semantics, path syntax, and merge strategy are **not** reimplemented — they come from `locter`, `pathtrace`, and `smob`. To support a new file type, prefer configuring/extending those dependencies (or injecting a custom `Reader`) over adding parsing logic to `FSStore`.
+
+### Loader/query seam
+The filesystem concern (`load`/`loadFile`, discovery, parsing) lives on `FSStore`; the pure query/merge engine lives on `Store`. Because `FSStore extends Store`, the two can be tested at their own boundary — `Store` with hand-built `Element[]` (no fs), `FSStore` against fixtures or a stubbed `Reader` port. The contracts (`IStore`, `INamingScheme`) are the seams callers inject through.
 
 ### Swappable merge strategy
-`Options.mergeFn` lets callers replace the default merge behavior wholesale (e.g. to concatenate arrays). `Container.merge` only decides *whether* to merge (both-objects) vs take the primary; the *how* is the injected function.
+`Options.mergeFn` lets callers replace the default merge behavior wholesale (e.g. to concatenate arrays). `Store.merge` only decides *whether* to merge (both-objects) vs take the primary; the *how* is the injected function.
 
 ### Name-based namespacing
-A file's derived `name` acts as a key namespace. `get('server.core')` matches an element named `server` and resolves `core` inside it, or matches an element named `server.core` directly — allowing the same logical config to be split across files or nested within one.
+A file's derived `name` (from `NamingScheme.toName`) acts as a key namespace. `get('server.core')` matches an element named `server` and resolves `core` inside it, or matches an element named `server.core` directly — allowing the same logical config to be split across files or nested within one.
 
 ## Error Handling
 
 - Non-object file contents are silently ignored in `loadFile` (no throw) — invalid/empty configs are skipped rather than failing the whole load.
-- Parse/IO errors surface from `locter.read` / `locateMany` and propagate to the caller (both `load` and `loadFile` are `async` and unhandled).
+- Parse/IO errors surface from the `Reader` (`locter.read`) / `locateMany` and propagate to the caller (both `load` and `loadFile` are `async` and unhandled).
 - `get` never throws for missing keys; it returns `undefined`.
 
 ## File Structure Mapping
 
 ```text
-src/module.ts   → Container: load/loadFile/get/findFiles/normalizeOptions/merge
-src/types.ts    → Element, MergeFn, Options, NormalizedOptions
-src/index.ts    → public barrel
+src/module.ts          → createStore() factory (Options → FSStore)
+src/types.ts           → Element, MergeFn, Options
+src/naming/module.ts   → NamingScheme: toPatterns/toName
+src/naming/types.ts    → INamingScheme, NamingOptions
+src/store/module.ts    → Store: add/get/merge (pure query/merge engine)
+src/store/fs.ts        → FSStore extends Store: load/loadFile/findFiles
+src/store/types.ts     → IStore, StoreOptions, Reader, FSStoreOptions
+src/index.ts           → public barrel
 ```

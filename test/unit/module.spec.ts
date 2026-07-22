@@ -6,88 +6,95 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { Container } from '../../src';
+import { createStore } from '../../src';
+import type { INamingScheme, Reader } from '../../src';
 
 describe('src/module', () => {
-    // End-to-end façade smoke tests: prove Container wires Loader + Store.
-    // Exhaustive discovery/name coverage lives in loader.spec.ts and the
-    // query/merge coverage in store.spec.ts.
-    describe('façade', () => {
-        it('should load explicit files and merge them via get', async () => {
-            const container = new Container({
-                prefix: 'project',
-                cwd: 'test/data',
-            });
-            await container.loadFile([
-                'project.conf',
-                'project.server.conf',
-            ]);
-
-            const core = container.get('server.core');
-
-            expect(core.port).toEqual(4010);
-            expect(core.host).toEqual('1.1.1.1');
+    it('should load explicit files and merge them', async () => {
+        const store = createStore({
+            prefix: 'project',
+            cwd: 'test/data',
         });
+        await store.loadFile([
+            'project.conf',
+            'project.server.conf',
+        ]);
 
-        it('should discover and read config from a directory', async () => {
-            const container = new Container({ prefix: 'project' });
-            await container.load('test/data');
+        const core = store.get('server.core');
 
-            const core = container.get('server.core');
-
-            expect(core).toBeDefined();
-            expect(core.host).toEqual('1.1.1.1');
-            expect(core.port).toEqual(4010);
-        });
-
-        it('should default to cwd and skip non-object files', async () => {
-            const container = new Container({ cwd: 'test/data' });
-            // scalar.yml is discovered but skipped, as it does not resolve to an object.
-            await container.load();
-
-            const project = container.get('project');
-
-            expect(project).toBeDefined();
-            expect(project.db.host).toEqual('127.0.0.1');
-            expect(project.server.core.host).toEqual('1.1.1.1');
-        });
+        expect(core.port).toEqual(4010);
+        expect(core.host).toEqual('1.1.1.1');
     });
 
-    // Option normalization is Container's own responsibility (not delegated).
-    describe('options', () => {
-        it('should normalize custom extensions', async () => {
-            const container = new Container({
-                prefix: 'project',
-                extensions: ['.yml', 'yaml'],
-                cwd: 'test/data',
-            });
-            await container.load();
+    it('should discover and read config from a directory', async () => {
+        const store = createStore({ prefix: 'project' });
+        await store.load('test/data');
 
-            const web = container.get('client.web');
+        expect(store.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+        expect(store.get('client.web')).toEqual({ host: '1.1.1.2', port: 4000 });
+    });
 
-            expect(web).toBeDefined();
-            expect(web.port).toEqual(4000);
+    it('should default discovery to the configured cwd', async () => {
+        const store = createStore({ cwd: 'test/data' });
+        // scalar.yml is discovered but skipped (not an object).
+        await store.load();
+
+        const project = store.get('project');
+
+        expect(project.db.host).toEqual('127.0.0.1');
+        expect(project.server.core.host).toEqual('1.1.1.1');
+    });
+
+    it('should normalize custom extensions', async () => {
+        const store = createStore({
+            prefix: 'project',
+            extensions: ['.yml', 'yaml'],
+            cwd: 'test/data',
         });
+        await store.load();
 
-        it('should use a custom merge function', async () => {
-            let called = false;
-            const container = new Container({
-                prefix: 'project',
-                cwd: 'test/data',
-                mergeFn: (target, source) => {
-                    called = true;
-                    return { ...source, ...target };
-                },
-            });
-            await container.loadFile([
-                'project.conf',
-                'project.server.conf',
-            ]);
+        expect(store.get('client.web').port).toEqual(4000);
+    });
 
-            const db = container.get(['db', 'server.db']);
-
-            expect(db).toBeDefined();
-            expect(called).toBe(true);
+    it('should use a custom merge function', async () => {
+        let called = false;
+        const store = createStore({
+            prefix: 'project',
+            cwd: 'test/data',
+            mergeFn: (target, source) => {
+                called = true;
+                return { ...source, ...target };
+            },
         });
+        await store.loadFile([
+            'project.conf',
+            'project.server.conf',
+        ]);
+
+        expect(store.get(['db', 'server.db'])).toBeDefined();
+        expect(called).toBe(true);
+    });
+
+    it('should accept a custom naming implementation', async () => {
+        const naming : INamingScheme = {
+            toPatterns: () => ['project.server.conf'],
+            toName: () => 'custom',
+        };
+        const store = createStore({ naming, cwd: 'test/data' });
+        await store.load();
+
+        expect(store.get('custom.core.port')).toEqual(4010);
+    });
+
+    it('should accept a custom reader implementation', async () => {
+        const reader : Reader = async () => ({ a: 1 });
+        const store = createStore({
+            prefix: 'project',
+            cwd: '/base',
+            read: reader,
+        });
+        await store.loadFile('project.server.conf');
+
+        expect(store.get('server')).toEqual({ a: 1 });
     });
 });

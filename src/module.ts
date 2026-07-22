@@ -6,103 +6,54 @@
  */
 
 import { createMerger } from 'smob';
-import { Loader } from './loader';
 import { NamingScheme } from './naming';
-import { Store } from './store';
-import type {
-    MergeFn,
-    NormalizedOptions,
-    Options,
-} from './types';
+import { FSStore } from './store';
+import type { INamingScheme } from './naming';
+import type { Options } from './types';
+
+function normalizeExtensions(input?: string[]) : string[] {
+    if (
+        input &&
+        input.length > 0
+    ) {
+        return input.map((extension) => {
+            if (extension.startsWith('.')) {
+                return extension.substring(1);
+            }
+
+            return extension;
+        });
+    }
+
+    return ['conf', 'js', 'mjs', 'cjs', 'ts', 'mts', 'yml', 'yaml'];
+}
 
 /**
- * Thin façade that wires a {@see NamingScheme}, a {@see Loader} (filesystem I/O)
- * and a {@see Store} (pure query/merge), delegating each public method to them.
+ * Build a filesystem-backed config store from a set of friendly options.
+ *
+ * Normalizes the extensions, resolves the working directory, and wires a
+ * {@see NamingScheme} (unless a custom {@see INamingScheme} is provided via
+ * `naming`) into an {@see FSStore}. The returned store discovers, loads and
+ * merges config files and answers dotted-path lookups.
+ *
+ * @param options
  */
-export class Container {
-    protected readonly options : NormalizedOptions;
+export function createStore(options: Options = {}) : FSStore {
+    const extensions = normalizeExtensions(options.extensions);
 
-    protected readonly store : Store;
+    const naming : INamingScheme = options.naming ?? new NamingScheme({
+        prefix: options.prefix,
+        suffix: options.suffix,
+        extensions,
+    });
 
-    protected readonly loader : Loader;
-
-    constructor(options: Options = {}) {
-        this.options = this.normalizeOptions(options);
-
-        const naming = new NamingScheme({
-            prefix: this.options.prefix,
-            suffix: this.options.suffix,
-            extensions: this.options.extensions,
-        });
-
-        this.store = new Store({ mergeFn: this.options.mergeFn });
-        this.loader = new Loader({
-            cwd: this.options.cwd,
-            naming,
-        });
-    }
-
-    get<T = any>(key: string | string[]) : T | undefined {
-        return this.store.get<T>(key);
-    }
-
-    /**
-     * Load config file(s) from one or many directories.
-     *
-     * @param input
-     */
-    async load(input?: string | string[]) : Promise<void> {
-        const elements = await this.loader.fromDirectories(input);
-        for (const element of elements) {
-            this.store.add(element);
-        }
-    }
-
-    /**
-     * Load file from a specific file location.
-     *
-     * @param input
-     */
-    async loadFile(input: string | string[]) : Promise<void> {
-        const elements = await this.loader.fromFiles(input);
-        for (const element of elements) {
-            this.store.add(element);
-        }
-    }
-
-    protected normalizeOptions(input: Options) : NormalizedOptions {
-        let extensions : string[];
-
-        if (
-            input.extensions &&
-            input.extensions.length > 0
-        ) {
-            extensions = input.extensions.map((extension) => {
-                if (extension.startsWith('.')) {
-                    return extension.substring(1);
-                }
-
-                return extension;
-            });
-        } else {
-            extensions = ['conf', 'js', 'mjs', 'cjs', 'ts', 'mts', 'yml', 'yaml'];
-        }
-
-        let mergeFn : MergeFn;
-        if (input.mergeFn) {
-            mergeFn = input.mergeFn;
-        } else {
-            mergeFn = createMerger({
-                array: false,
-                inPlace: false,
-            });
-        }
-
-        return {
-            ...input,
-            cwd: input.cwd || process.cwd(),
-            mergeFn,
-            extensions,
-        };
-    }
+    return new FSStore({
+        cwd: options.cwd || process.cwd(),
+        naming,
+        mergeFn: options.mergeFn ?? createMerger({
+            array: false,
+            inPlace: false,
+        }),
+        read: options.read,
+    });
 }

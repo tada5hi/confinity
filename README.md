@@ -6,7 +6,7 @@
 
 <p align="center">
     <b>Load & merge configuration across a multi-package application.</b><br>
-    One <code>Container</code> discovers config files in one or many directories, parses<br>
+    A single <code>createStore()</code> discovers config files in one or many directories, parses<br>
     <code>.conf</code>, <code>.yml</code>, <code>.json</code>, JS/TS &amp; more, and serves them through a single dotted-path getter.
 </p>
 
@@ -39,6 +39,7 @@
 - [File Discovery](#-file-discovery)
 - [Configuration](#-configuration)
 - [API](#-api)
+- [Extending](#-extending)
 - [Merge Semantics](#-merge-semantics)
 - [Requirements](#-requirements)
 - [License](#-license)
@@ -52,7 +53,7 @@ Large applications rarely keep their configuration in a single file. Services, c
 - **🔗 Deep-merge on read** — a single `get('server.core')` collects and merges matches from **every** loaded file, so config can be split or layered freely.
 - **🏷️ Name-based namespacing** — a file's name (after stripping a `prefix`/`suffix`) becomes a key namespace, so `project.server.conf` answers `get('server.*')`.
 - **🎯 Dotted & wildcard paths** — resolve nested values (and wildcard segments) via [`pathtrace`](https://github.com/tada5hi/pathtrace).
-- **🔧 Swappable merge strategy** — bring your own `mergeFn` to change how values combine.
+- **🔧 Swappable strategy** — bring your own `mergeFn`, or inject a custom `naming` / `read` implementation.
 - **📦 ESM-only, tiny core** — a thin orchestrator over `locter`, `pathtrace`, and `smob`; no config parsing reinvented.
 
 ## 📥 Installation
@@ -74,50 +75,50 @@ config/
 └── project.client.yml    # web.port
 ```
 
-Load and read it:
+Create a store, load it, and read it:
 
 ```typescript
-import { Container } from 'confinity';
+import { createStore } from 'confinity';
 
-const container = new Container({
+const store = createStore({
     cwd: 'config',
     prefix: 'project',
 });
 
 // Discover & load every `project.*` file in `cwd`
-await container.load();
+await store.load();
 
 // Values from `project.conf` and `project.server.conf` are merged
-const core = container.get('server.core');
+const core = store.get('server.core');
 // → { host: '1.1.1.1', port: 4010 }
 
-const web = container.get('client.web');
+const web = store.get('client.web');
 // → { host: '1.1.1.2', port: 4000 }
 ```
 
 Prefer to load specific files? Skip discovery and pass paths directly:
 
 ```typescript
-const container = new Container({ prefix: 'project', cwd: 'config' });
+const store = createStore({ prefix: 'project', cwd: 'config' });
 
-await container.loadFile([
+await store.loadFile([
     'project.conf',
     'project.server.conf',
 ]);
 
-container.get('server.core'); // → { host: '1.1.1.1', port: 4010 }
+store.get('server.core'); // → { host: '1.1.1.1', port: 4010 }
 ```
 
 Merge several keys, letting later keys take precedence for scalars:
 
 ```typescript
-const db = container.get(['db', 'server.db', 'server.core.db']);
+const db = store.get(['db', 'server.db', 'server.core.db']);
 // → { host: '127.0.0.1', user: 'admin', password: 'start123', database: 'app' }
 ```
 
 ## 🔍 How It Works
 
-Confinity is built around a single `Container` implementing a **load → store → merge → get** pipeline. Discovery, parsing, path resolution, and merging are delegated to its three runtime dependencies — the `Container` owns only orchestration, name derivation, and merge precedence.
+`createStore()` wires a **naming scheme** into a **filesystem store** (`FSStore`) that implements a **load → store → merge → get** pipeline. Discovery, parsing, path resolution, and merging are delegated to the three runtime dependencies — Confinity owns only orchestration, name derivation, and merge precedence.
 
 ```text
    directories / files
@@ -146,7 +147,7 @@ Confinity is built around a single `Container` implementing a **load → store �
 
 ## 🗂️ File Discovery
 
-`findFiles` builds glob patterns from your options. The single `*` matches one filename segment (no path separator), so **discovery never descends into subdirectories**:
+The naming scheme builds glob patterns from your options. The single `*` matches one filename segment (no path separator), so **discovery never descends into subdirectories**:
 
 | `prefix` | `suffix` | Glob patterns                                       |
 |:--------:|:--------:|-----------------------------------------------------|
@@ -169,10 +170,10 @@ An element with an empty name is looked up at the root, so its keys are addressa
 
 ## ⚙️ Configuration
 
-Pass `Options` to the constructor. Every field is optional:
+Pass `Options` to `createStore()`. Every field is optional:
 
 ```typescript
-import { Container, type Options } from 'confinity';
+import { createStore, type Options } from 'confinity';
 
 const options: Options = {
     cwd: process.cwd(),
@@ -182,7 +183,7 @@ const options: Options = {
     mergeFn: (target, source) => ({ ...source, ...target }),
 };
 
-const container = new Container(options);
+const store = createStore(options);
 ```
 
 | Option       | Type                                              | Default                                                                 | Description                                                                                   |
@@ -192,19 +193,27 @@ const container = new Container(options);
 | `suffix`     | `string`                                          | —                                                                       | File-name suffix; stripped when deriving an element's `name`.                                 |
 | `extensions` | `string[]`                                         | `conf`, `js`, `mjs`, `cjs`, `ts`, `mts`, `yml`, `yaml`                  | Extensions to discover. A leading `.` is stripped automatically.                              |
 | `mergeFn`    | `(target, source) => Record<string, any>`         | [`smob`](https://github.com/tada5hi/smob) merger (arrays replaced, immutable) | Strategy used to deep-merge two objects during `get`.                                   |
+| `naming`     | `INamingScheme`                                    | `NamingScheme` from `prefix`/`suffix`/`extensions`                      | Custom naming implementation (overrides `prefix`/`suffix`/`extensions`).                       |
+| `read`       | `(filePath: string) => Promise<unknown>`          | [`locter`](https://github.com/tada5hi/locter)'s `read`                  | Custom reader/parser used to turn a file path into a value.                                    |
 
 ## 📚 API
 
-The package exposes a single entry point re-exporting the `Container` class and its supporting types.
+The package's entry point is the `createStore` factory; the classes and interfaces it builds on are exported too.
 
-### `Container`
+### `createStore(options?): FSStore`
 
-| Member                        | Signature                                             | Description                                                                                     |
-|-------------------------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| `constructor`                 | `new Container(options?: Options)`                    | Normalizes options and seeds an empty item list.                                                |
-| `load`                        | `load(input?: string \| string[]): Promise<void>`    | Discovers config files in one or many directories (defaults to `cwd`), then loads each.         |
-| `loadFile`                    | `loadFile(input: string \| string[]): Promise<void>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                      |
-| `get`                         | `get<T = any>(key: string \| string[]): T \| undefined` | Resolves a dotted key across loaded elements, merged. An array of keys is merged in order.    |
+Normalizes the options, wires a `NamingScheme` (unless a custom `naming` is given) into an `FSStore`, and returns it.
+
+### `FSStore` (extends `Store`)
+
+| Member     | Signature                                             | Description                                                                                     |
+|------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `load`     | `load(input?: string \| string[]): Promise<void>`    | Discovers config files in one or many directories (defaults to `cwd`), then loads each.         |
+| `loadFile` | `loadFile(input: string \| string[]): Promise<void>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                      |
+| `add`      | `add(element: Element): void`                        | *(from `Store`)* Adds a named element to the store.                                              |
+| `get`      | `get<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. |
+
+`Store` is the pure, in-memory half (`add` + `get`, no filesystem) — construct it directly if you want to feed elements in by hand.
 
 ### Types
 
@@ -216,21 +225,54 @@ type Element = {
 
 type MergeFn = (target: Record<string, any>, source: Record<string, any>) => Record<string, any>;
 
+type Reader = (filePath: string) => Promise<unknown>;
+
 type Options = {
     cwd?: string;
     prefix?: string;
     suffix?: string;
     extensions?: string[];
     mergeFn?: MergeFn;
+    naming?: INamingScheme;
+    read?: Reader;
 };
 
-type NormalizedOptions = Required<Pick<Options, 'cwd' | 'extensions' | 'mergeFn'>>
-    & Pick<Options, 'prefix' | 'suffix'>;
+// Contracts (interfaces, class-implemented)
+interface INamingScheme {
+    toPatterns(): string[];
+    toName(filePath: string): string;
+}
+
+interface IStore {
+    add(element: Element): void;
+    get<T = any>(key: string | string[]): T | undefined;
+}
 ```
+
+## 🧩 Extending
+
+Two seams are injectable through `Options`:
+
+```typescript
+import { createStore, type INamingScheme, type Reader } from 'confinity';
+
+// Custom naming: control which files match and how names are derived.
+const naming: INamingScheme = {
+    toPatterns: () => ['*.config.json'],
+    toName: (filePath) => filePath.split('/').pop()!.replace('.config.json', ''),
+};
+
+// Custom reader: e.g. parse a bespoke format, or read from memory.
+const read: Reader = async (filePath) => ({ /* parsed value */ });
+
+const store = createStore({ naming, read });
+```
+
+Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`.
 
 ## 🔀 Merge Semantics
 
-When two matches combine, `Container.merge(primary, secondary)` decides *whether* to merge — the injected `mergeFn` decides *how*:
+When two matches combine, `Store.merge(primary, secondary)` decides *whether* to merge — the injected `mergeFn` decides *how*:
 
 - **Two objects** → deep-merged by the configured `mergeFn`. The default [`smob`](https://github.com/tada5hi/smob) merger **replaces** arrays (does not concatenate) and is immutable (`inPlace: false`).
 - **Scalar `primary`** → wins over `secondary`.

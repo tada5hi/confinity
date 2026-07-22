@@ -1,9 +1,16 @@
 # Plan 003 — Split `Loader` (I/O) vs `Store` (pure)
 
-**Status:** proposed · **Candidate:** 3 of 3 · **Dependency category:** Local-substitutable (fs) + In-process
+**Status:** implemented · **Candidate:** 3 of 3 · **Dependency category:** Local-substitutable (fs) + In-process
 
 > Superset of Plans [001](001-resolver.md) (Store == Resolver) and [002](002-naming-scheme.md)
-> (NamingScheme). Implement this as one self-contained refactor.
+> (NamingScheme). Shipped as one self-contained refactor.
+
+> **As shipped.** The `Loader` was **not** a standalone class — its filesystem logic was folded
+> into `FSStore extends Store` (`src/store/fs.ts`), so `load`/`loadFile` and the pure `add`/`get`
+> live on one object. `Container` was removed entirely and replaced by the `createStore(options)`
+> factory (`src/module.ts`), which wires a `NamingScheme` into an `FSStore`. Two `I`-prefixed
+> contracts were added — `INamingScheme` and `IStore` — and both the naming scheme and the reader
+> port are injectable via `Options` (`naming?: INamingScheme`, `read?: Reader`).
 
 ## Problem
 

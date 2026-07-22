@@ -5,7 +5,6 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+export * from './fs';
 export * from './module';
-export * from './naming';
-export * from './store';
 export * from './types';

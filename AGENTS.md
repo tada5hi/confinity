@@ -2,7 +2,7 @@
 
 # Confinity — Agent Guide
 
-Confinity is a small TypeScript library for loading configurations in the context of a multi-package application. A single `Container` class discovers config files across one or many directories, parses them (via [locter](https://github.com/tada5hi/locter)), and exposes their values through a dotted-path getter that deep-merges matches from every loaded file. It is published as an **ESM-only** package and is currently in **beta / work-in-progress**.
+Confinity is a small TypeScript library for loading configurations in the context of a multi-package application. The `createStore()` factory builds an `FSStore` that discovers config files across one or many directories, parses them (via [locter](https://github.com/tada5hi/locter)), and exposes their values through a dotted-path getter that deep-merges matches from every loaded file. `FSStore` (the filesystem loader) extends `Store` (the pure query/merge engine), with the file-name convention factored out into a `NamingScheme`. It is published as an **ESM-only** package and is currently in **beta / work-in-progress**.
 
 ## Quick Reference
 
@@ -35,10 +35,13 @@ npm run lint           # eslint (flat config)  (lint:fix to autofix)
 
 ## Public API
 
-The package exposes a single ESM entry point (`src/index.ts`) that re-exports everything from `module.ts` and `types.ts`:
+The package exposes a single ESM entry point (`src/index.ts`) that re-exports from `module.ts`, `naming/`, `store/`, and `types.ts`:
 
-- `Container` — the config loader (`load`, `loadFile`, `get`)
-- `Options` / `NormalizedOptions`, `Element`, `MergeFn` — supporting types
+- `createStore(options?)` — factory that builds a filesystem-backed `FSStore`
+- `FSStore` / `Store` — the filesystem loader (`load`, `loadFile`) and the pure query/merge engine (`add`, `get`); `FSStore extends Store`
+- `NamingScheme` — the prefix/suffix/extensions convention (`toPatterns`, `toName`)
+- `INamingScheme`, `IStore` — the contracts callers inject through (`Options.naming`, `Options.read`)
+- `Options`, `Element`, `MergeFn`, `Reader`, `StoreOptions`, `NamingOptions`, `FSStoreOptions` — supporting types
 
 ## Detailed Guides
 
@@ -49,13 +52,13 @@ The package exposes a single ESM entry point (`src/index.ts`) that re-exports ev
 
 ## Plans
 
-Architecture-deepening RFCs (make `Container`'s internals testable at their own boundary).
-Each is a self-contained internal refactor that keeps the public `Container` API unchanged and
-is prototyped in its own worktree/PR:
+Architecture-deepening RFCs that made the store's internals testable at their own boundary.
+Plan 003 (a superset of 001 + 002) has **shipped** — see its "As shipped" note for how the
+implementation diverged from the proposal:
 
-1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]`.
+1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]` (now `Store`).
 2. [Extract a `NamingScheme`](.agents/plans/002-naming-scheme.md) — the prefix/suffix/extension convention (both directions).
-3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2).
+3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2), shipped as `FSStore extends Store` + the `createStore` factory.
 
 ## Commits, Issues & Pull Requests
 
