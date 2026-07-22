@@ -70,7 +70,7 @@ The commit `type` drives the next release version — release-please reads the h
 
 - Automated via **release-please** (`release-please-config.json`, `.release-please-manifest.json`), run by `.github/workflows/release.yml` on push to `master`; publishing is handled by `tada5hi/monoship`.
 - `release-please-config.json` uses `release-type: node`, `include-v-in-tag: true` (tags look like `v1.0.0`), and `bump-minor-pre-major: true`.
-- **`release-as: "1.0.0"`** is currently pinned so the next release is exactly `v1.0.0`. Remove that key after the `1.0.0` release cuts, so subsequent versions are computed from commit history again.
+- Version bumps are computed from the commit history. (A temporary `release-as: "1.0.0"` pin was used to cut `v1.0.0` and has since been removed.)
 - Do not hand-edit `version` in `package.json`, `CHANGELOG.md`, or `.release-please-manifest.json` — release-please manages them via its release PR.
 
 ## CI/CD
