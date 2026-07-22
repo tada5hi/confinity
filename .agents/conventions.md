@@ -4,27 +4,25 @@
 
 | Tool                          | Purpose                                                              |
 |-------------------------------|----------------------------------------------------------------------|
-| **TypeScript 5.6**            | Source language; `strict: true`, extends `@tada5hi/tsconfig`.        |
-| **Rollup + `@rollup/plugin-swc`** | Bundles `src/index.ts` to CJS + ESM (`build:js`).               |
-| **`tsc --emitDeclarationOnly`** | Emits `.d.ts` type declarations (`build:types`).                   |
-| **Jest + `@swc/jest`**        | Test runner (see [testing.md](testing.md)).                          |
-| **ESLint** (`@tada5hi/eslint-config-typescript`) | Linting of `./src` and `./test`.                  |
-| **commitlint** (`@tada5hi/commitlint-config`) | Enforces Conventional Commits on `commit-msg`.       |
-| **semantic-release** (`@tada5hi/semantic-release`) | Automated versioning + npm publish in CI.       |
-| **husky**                     | Git hooks (commit-msg → commitlint).                                 |
-| **cross-env / rimraf**        | Cross-platform env vars and `dist/` cleanup in npm scripts.          |
+| **TypeScript 6**              | Source language; `strict` + `noUncheckedIndexedAccess`, extends `@tada5hi/tsconfig`. |
+| **[tsdown](https://tsdown.dev)** | Bundles `src/index.ts` to ESM + `.d.mts` types in one step (`build`). |
+| **[Vitest](https://vitest.dev)** | Test runner + v8 coverage (see [testing.md](testing.md)).         |
+| **ESLint** (`@tada5hi/eslint-config`, flat config) | Linting via `eslint.config.js` (ESLint 10 + typescript-eslint 8). |
+| **commitlint** (`@tada5hi/commitlint-config`) | Enforces Conventional Commits on the `commit-msg` hook. |
+| **release-please**            | Automated versioning, changelog, and release PRs from commit history. |
+| **husky**                     | Git hooks; `prepare` script installs them, `.husky/commit-msg` runs commitlint. |
 
 ## Workflow
 
-- After changing source, **build** (`npm run build`) and **lint** (`npm run lint`) the affected files; both run in CI and will block a release.
-- Run `npm run test` (and `npm run test:coverage` when touching logic) before opening a PR — coverage thresholds are enforced.
+- After changing source, **build** (`npm run build`), **typecheck** (`npm run typecheck`), and **lint** (`npm run lint`); lint, typecheck, and test all run in CI and gate the branch. Note: `tsdown` (the build) does **not** fail on type errors, so `npm run typecheck` is what actually catches them.
+- Run `npm run test` (and `npm run test:coverage` when touching logic) before opening a PR — coverage thresholds (80%) are enforced.
 - Keep the public surface flowing through `src/index.ts`; don't export internal helpers.
 
 ## Code Style
 
-- **Module format**: ESM source (`import`/`export`), compiled to both CJS (`dist/index.cjs`) and ESM (`dist/index.mjs`).
+- **Module format**: ESM only (`"type": "module"`); source and build output are both ESM.
 - **Indentation**: 4 spaces, LF line endings, UTF-8, final newline (`.editorconfig`).
-- **Linting**: `@tada5hi/eslint-config-typescript` via `.eslintrc`, type-aware through `tsconfig.eslint.json`. Notable local overrides: `class-methods-use-this` off, `import/no-cycle` at `maxDepth: 1`, several `@typescript-eslint` rules relaxed.
+- **Linting**: `@tada5hi/eslint-config` (flat config) via `eslint.config.js`, ignoring `dist/**`. The config is `@stylistic`-based — prefer running `npm run lint:fix` for formatting (operator line-breaks, object-curly-newline, import list style) rather than hand-formatting.
 - **File headers**: source files carry the standard copyright/license block (see existing files) — preserve it when creating new files.
 
 ## Naming Conventions
@@ -42,45 +40,44 @@
 
 ## TypeScript
 
-- Extends `@tada5hi/tsconfig` with: `strict: true`, `module: commonjs`, `target: ES2020`, `lib: [ESNext]`, `outDir: dist`, `include: src/**/*.ts`.
-- `tsconfig.eslint.json` widens the project to include `test/**` for type-aware linting only (not for the build).
+- `tsconfig.json` extends `@tada5hi/tsconfig` and sets: `target: ES2022`, `module: ESNext`, `moduleResolution: bundler`, `noEmit: true` (tsdown emits the build), `allowImportingTsExtensions: true`, and `types: ["node"]`.
+- The base config enables `strict`, `noUncheckedIndexedAccess`, and `verbatimModuleSyntax` — index accesses must be guarded (prefer `for…of`/`.map` over indexed `for` loops), and type-only imports must use `import type`.
+- `"types": ["node"]` is required because the library uses Node APIs (`node:path`, `process`); without it the Node globals are not in scope.
 
 ## Commit Convention
 
-Commits follow **[Conventional Commits](https://www.conventionalcommits.org)** and are validated by commitlint:
+Commits follow **[Conventional Commits](https://www.conventionalcommits.org)** and are validated by commitlint on the `commit-msg` hook:
 
 ```
 <type>(<optional scope>): <subject>
 
 # e.g.
 feat: use last matching output for getter
-fix(deps): bump pathtrace to v1.0.0
-build(deps-dev): bump rollup from 4.22.4 to 4.22.5
+fix(deps): bump pathtrace to v2
+build(deps-dev): bump vitest from 4.1.9 to 4.1.10
 ```
 
-The commit `type` drives the next release version — semantic-release reads the history to decide `major`/`minor`/`patch`.
-
-## Pre-commit Hooks
-
-husky is configured (`prepare`-less, `husky` v9); the `commit-msg` hook runs commitlint to reject non-conforming messages. There is no auto-format/lint-staged hook — run `npm run lint` yourself.
+The commit `type` drives the next release version — release-please reads the history to decide `major`/`minor`/`patch`.
 
 ## Build Output
 
-- `npm run build` = `rimraf ./dist` → `cross-env NODE_ENV=production rollup -c` → `tsc --emitDeclarationOnly`.
-- Produces `dist/index.cjs`, `dist/index.mjs` (both with sourcemaps), and `dist/index.d.ts`.
-- Runtime dependencies (`locter`, `pathtrace`, `smob`) are marked **external** in `rollup.config.mjs` and are not bundled.
-- Only `dist/` is published to npm (`files` field in `package.json`).
+- `npm run build` runs `tsdown` (config in `tsdown.config.ts`): `entry: src/index.ts`, `format: esm`, `dts: true`, `sourcemap: true`.
+- Produces `dist/index.mjs`, `dist/index.mjs.map`, and `dist/index.d.mts`. tsdown cleans `dist/` on each build.
+- Runtime dependencies (`locter`, `pathtrace`, `smob`) are treated as external and are not bundled.
+- Only `dist/` is published to npm (`files` field).
 
 ## Release Process
 
-- Automated via **semantic-release** (`release.config.js` extends `@tada5hi/semantic-release`), run in the CI `Release` job with `GITHUB_TOKEN` and `NPM_TOKEN`.
-- Do not hand-edit `version` in `package.json` or `CHANGELOG.md` — both are managed by the release automation from commit history.
+- Automated via **release-please** (`release-please-config.json`, `.release-please-manifest.json`), run by `.github/workflows/release.yml` on push to `master`; publishing is handled by `tada5hi/monoship`.
+- `release-please-config.json` uses `release-type: node`, `include-v-in-tag: true` (tags look like `v1.0.0`), and `bump-minor-pre-major: true`.
+- **`release-as: "1.0.0"`** is currently pinned so the next release is exactly `v1.0.0`. Remove that key after the `1.0.0` release cuts, so subsequent versions are computed from commit history again.
+- Do not hand-edit `version` in `package.json`, `CHANGELOG.md`, or `.release-please-manifest.json` — release-please manages them via its release PR.
 
 ## CI/CD
 
-- `.github/workflows/main.yml` triggers on push/PR to `develop`, `master`, `next`, `beta`, `alpha` (Node 20).
-- Job graph: **Install → Build → (Lint, Test) → Release**. Composite actions live in `.github/actions/install` and `.github/actions/build`, with `node_modules` and `dist/` caching.
-- `develop` is the primary/default branch.
+- `.github/workflows/main.yml` (CI) triggers on push/PR to `develop`, `master`, `next`, `beta`, `alpha` (Node 24): **Install → Build → (Lint, Test)** plus an independent **Typecheck** job. Composite actions live in `.github/actions/install` and `.github/actions/build`, caching `node_modules` (keyed on `package-lock.json`) and `dist/`.
+- `.github/workflows/release.yml` (Release) runs release-please on `master`.
+- `develop` is the primary development branch; dependabot targets `develop` (`.github/dependabot.yml`).
 
 ## Best Practices
 

@@ -2,32 +2,32 @@
 
 ## Setup
 
-- **Runner**: Jest 29, with TypeScript transpiled by `@swc/jest` (no type-checking during tests — fast SWC transform only).
-- **Test location**: `test/unit/**` plus any `*.spec.ts` / `*.test.ts` (see `testRegex` below).
-- **Config**: `test/jest.config.js` (`rootDir` is the repo root, `../` from the config file).
+- **Runner**: [Vitest](https://vitest.dev) 4 (config at `test/vitest.config.ts`).
+- **Test location**: `test/unit/**/*.{test,spec}.{js,ts}` (the `include` glob).
 - **Fixtures**: `test/data/` — real config files loaded by the specs.
-- **Env**: `NODE_ENV=test` (set by the `test` script via `cross-env`).
+- **Coverage**: v8 provider (`@vitest/coverage-v8`).
 
 ## Running Tests
 
 ```bash
-npm run test              # run all tests
-npm run test:coverage     # run with coverage (adds --coverage)
+npm run test              # run all tests once
+npm run test:coverage     # run once with coverage (thresholds enforced)
 
-# a single file / pattern (forward extra args after --):
+# a single file / pattern:
 npm run test -- test/unit/module.spec.ts
 npm run test -- -t "should load explicit file"
 ```
 
-## Jest Configuration Highlights
+Both scripts pass `--run` so Vitest executes once and exits (no watch mode) — matching CI.
 
-From `test/jest.config.js`:
+## Vitest Configuration Highlights
 
-- `testEnvironment: 'node'`
-- `transform`: `^.+\.tsx?$` → `@swc/jest`
-- `testRegex`: `(/unit/.*|(\.|/)(test|spec))\.(ts|js)x?$`
-- `testPathIgnorePatterns`: `writable`, `dist`, `/unit/mock-util.ts`
-- `collectCoverageFrom`: `src/**/*.ts` (excluding `*.d.ts`)
+From `test/vitest.config.ts`:
+
+- `test.include`: `['test/unit/**/*.{test,spec}.{js,ts}']`
+- `test.coverage.provider`: `'v8'`
+- `test.coverage.include`: `['src/**/*.{ts,tsx,js,jsx}']`
+- `test.coverage.thresholds`: `branches`, `functions`, `lines`, `statements` all **80**
 
 ## Test Layers
 
@@ -42,46 +42,39 @@ From `test/jest.config.js`:
 | `project.conf`         | `key=value`  | Base config (`server.core.host`, `client.web.host`, `db.*`, …).    |
 | `project.server.conf`  | `key=value`  | Overrides/adds (`core.port`, `db.database`) — merged over base.     |
 | `project.client.yml`   | YAML         | Verifies non-`.conf` formats load and merge (`web.port`).          |
-| `project.invalid.conf` | `key=value`  | Lacks the `project` prefix — used to check prefix filtering.        |
+| `project.invalid.conf` | `key=value`  | Carries the `project` prefix; loads as element `invalid` (`{app:{attr:'foo'}}`). |
+| `scalar.yml`           | YAML scalar  | Parses to a non-object (`42`) — exercises the load-time skip path.  |
 
-All fixtures use the `project` prefix so tests pass `{ prefix: 'project' }`. After stripping the prefix, `project.server.conf` becomes element name `server`, so `get('server.core')` resolves `core` inside it.
+Most fixtures use the `project` prefix so tests pass `{ prefix: 'project' }`. After stripping the prefix, `project.server.conf` becomes element name `server`, so `get('server.core')` resolves `core` inside it. `scalar.yml` has no prefix and resolves to a number, so it is only picked up by the no-prefix discovery test and is skipped (not stored) because it is not an object.
 
 ## Testing Philosophy
 
 - Tests assert the **expected** behavior of the load/merge/get contract described in [architecture.md](architecture.md), not just whatever the implementation happens to do. A failing test may indicate a real bug in `Container`, not a broken test.
-- Prefer driving behavior through the public API (`new Container(...)`, `load`/`loadFile`, `get`) with real fixture files over stubbing `locter`/`pathtrace`/`smob`. Because the library is a thin orchestrator over those dependencies, integration-style tests with fixtures give the most signal; add new fixtures under `test/data/` rather than mocking file I/O.
+- Prefer driving behavior through the public API (`new Container(...)`, `load`/`loadFile`, `get`) with real fixture files over stubbing `locter`/`pathtrace`/`smob`. Because the library is a thin orchestrator over those dependencies, integration-style tests with fixtures give the most signal; add new fixtures under `test/data/` rather than mocking file I/O. For custom-injection points (e.g. `Options.mergeFn`), pass a real function and assert on its observable effect.
 
 ## Code Coverage
 
 ```bash
-npm run test:coverage     # report written to coverage/
+npm run test:coverage     # v8 report; fails if any metric < 80%
 ```
 
-Global thresholds are enforced (`coverageThreshold.global` in `test/jest.config.js`) — a run fails if coverage drops below:
-
-| Metric     | Threshold |
-|------------|-----------|
-| Branches   | 58%       |
-| Functions  | 77%       |
-| Lines      | 73%       |
-| Statements | 73%       |
-
-When adding code paths, add tests so coverage stays above these floors (or raise the floors alongside new tests).
+Thresholds (`test.coverage.thresholds` in `test/vitest.config.ts`) are enforced — a run fails if coverage drops below **80%** for branches, functions, lines, or statements. When adding code paths, add tests so coverage stays above these floors.
 
 ## CI Pipeline
 
-GitHub Actions (`.github/workflows/main.yml`) on push/PR to `develop`, `master`, `next`, `beta`, `alpha`, running on Node 20:
+GitHub Actions (`.github/workflows/main.yml`) on push/PR to `develop`, `master`, `next`, `beta`, `alpha`, running on Node 24:
 
 ```
-Install ──► Build ──┬─► Lint
-                    ├─► Test  (npm run test)
-                    └─► (Lint + Test) ──► Release (semantic-release)
+Install ──┬─► Build ──┬─► Lint
+          │           └─► Test  (npm run test)
+          └─► Typecheck  (npm run typecheck)
 ```
 
-Build output is cached between jobs. Tests run against the built state after `Install` + `Build`.
+Build output is cached between jobs; lint and test both depend on a successful build. Typecheck (`tsc --noEmit`) runs independently of the build because **tsdown does not fail on type errors** — a full `tsc` pass is the only gate that catches them. Releases are handled separately by `.github/workflows/release.yml` (release-please) on `master` — see [conventions.md](conventions.md).
 
 ## Writing New Tests
 
-1. Place test files under `test/unit/` (or name them `*.spec.ts` / `*.test.ts`) so `testRegex` picks them up.
-2. Add any needed config fixtures to `test/data/`; construct `Container` with the matching `prefix`/`suffix`/`cwd`.
-3. Run `npm run test` (or `npm run test:coverage`) to verify and keep thresholds green.
+1. Place test files under `test/unit/` named `*.spec.ts` / `*.test.ts` so the `include` glob picks them up.
+2. Import test globals from `vitest` (`import { describe, expect, it } from 'vitest'`).
+3. Add any needed config fixtures to `test/data/`; construct `Container` with the matching `prefix`/`suffix`/`cwd`.
+4. Run `npm run test` (or `npm run test:coverage`) to verify and keep thresholds green.

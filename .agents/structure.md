@@ -1,6 +1,6 @@
 # Project Structure
 
-Confinity is a **single-package** TypeScript library. Source lives in `src/`, tests and fixtures in `test/`, and build output goes to `dist/` (git-ignored).
+Confinity is a **single-package**, **ESM-only** TypeScript library. Source lives in `src/`, tests and fixtures in `test/`, and build output goes to `dist/` (git-ignored).
 
 ## Directory Layout
 
@@ -11,20 +11,22 @@ confinity/
 │   ├── module.ts              # Container class — the entire runtime logic
 │   └── types.ts               # Element, MergeFn, Options, NormalizedOptions
 ├── test/
-│   ├── jest.config.js         # Jest config (SWC transform, coverage thresholds)
+│   ├── vitest.config.ts       # Vitest config (include globs + v8 coverage thresholds)
 │   ├── unit/
 │   │   └── module.spec.ts     # Container behavior tests
 │   └── data/                  # Fixture config files loaded by the tests
 │       ├── project.conf          # key=value (.conf) fixture
 │       ├── project.server.conf   # key=value (.conf) fixture
 │       ├── project.client.yml    # YAML fixture
-│       └── project.invalid.conf  # fixture without the `project` prefix
-├── rollup.config.mjs          # Rollup build (SWC compile → CJS + ESM)
-├── tsconfig.json              # Build tsconfig (extends @tada5hi/tsconfig)
-├── tsconfig.eslint.json       # Wider tsconfig for linting src + test
-├── .eslintrc                  # ESLint config (@tada5hi/eslint-config-typescript)
-├── commitlint.config.js       # Conventional Commits enforcement
-├── release.config.js          # semantic-release config
+│       ├── project.invalid.conf  # prefixed fixture → element "invalid"
+│       └── scalar.yml            # non-object fixture (skipped on load)
+├── tsdown.config.ts           # Build config (ESM + .d.mts, sourcemaps)
+├── tsconfig.json              # Typecheck config (noEmit; extends @tada5hi/tsconfig)
+├── eslint.config.js           # ESLint flat config (@tada5hi/eslint-config)
+├── commitlint.config.mjs      # Conventional Commits enforcement
+├── release-please-config.json # release-please configuration
+├── .release-please-manifest.json # last-released version tracked by release-please
+├── .husky/commit-msg          # runs commitlint on commit
 └── package.json
 ```
 
@@ -44,7 +46,7 @@ confinity/
 | `get<T>(key)`                 | public      | Resolves a dotted key (or array of keys) across loaded items, merged.      |
 | `load(input?)`                | public      | Discovers config files in one/many directories, then loads each.          |
 | `loadFile(input)`             | public      | Loads a single file (or array) directly, deriving its `name`.             |
-| `findFiles(path)`             | protected   | Builds glob patterns from prefix/suffix/extensions; calls `locateMany`.    |
+| `findFiles(cwd)`              | protected   | Builds glob patterns from prefix/suffix/extensions; calls `locateMany`.     |
 | `normalizeOptions(input)`     | protected   | Applies defaults for `cwd`, `extensions`, and `mergeFn`.                    |
 | `merge(primary, secondary)`   | protected   | Object-vs-object deep merge, otherwise first-defined wins.                  |
 
@@ -52,11 +54,11 @@ confinity/
 
 | Dependency  | Role                                                                       |
 |-------------|-----------------------------------------------------------------------------|
-| `locter`    | `locateMany` (glob file discovery), `load` (parse config), `buildFilePath`. |
+| `locter`    | `locateMany` (glob file discovery, `cwd` option), `read` (parse config), `buildFilePath`. |
 | `pathtrace` | `expandPath` (resolve wildcard segments), `getPathInfo` (read a value).      |
 | `smob`      | `createMerger` (deep merge with `array:false, inPlace:false`), `isObject`.   |
 
-Dev tooling (Rollup, SWC, Jest, ESLint, commitlint, semantic-release, husky) is all shared `@tada5hi/*` config. See [conventions.md](conventions.md).
+Dev tooling (tsdown, vitest, ESLint, commitlint, release-please, husky) is all shared `@tada5hi/*` config. See [conventions.md](conventions.md).
 
 ## Package Exports
 
@@ -64,15 +66,14 @@ Dev tooling (Rollup, SWC, Jest, ESLint, commitlint, semantic-release, husky) is 
 {
     "./package.json": "./package.json",
     ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.mjs",
-        "require": "./dist/index.cjs"
+        "types": "./dist/index.d.mts",
+        "import": "./dist/index.mjs"
     }
 }
 ```
 
-- `main` → `dist/index.cjs`, `module` → `dist/index.mjs`, `types` → `dist/index.d.ts`.
-- Only `dist/` is published (`files` field).
+- `main` → `dist/index.mjs`, `types` → `dist/index.d.mts`. **ESM-only** — there is no CJS (`require`) entry.
+- Only `dist/` is published (`files` field); `publishConfig.access` is `public`.
 - The public API is controlled by the `src/index.ts` barrel — anything not re-exported there is internal. `module.ts` protected members are implementation detail and must not be relied on by callers.
 
 ## Separation of Concerns

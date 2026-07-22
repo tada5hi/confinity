@@ -44,21 +44,21 @@ export type Options = {
 ### 1. Discovery — `load(input?)` → `findFiles()`
 
 - `input` may be a single directory, an array of directories, or omitted (falls back to `cwd`). Relative directories are resolved against `options.cwd`.
-- `findFiles` builds glob patterns from `prefix`/`suffix`/`extensions`, then calls `locter.locateMany(patterns, { path, onlyFiles: true })`. Pattern selection:
+- `findFiles` builds glob patterns from `prefix`/`suffix`/`extensions`, then calls `locter.locateMany(patterns, { cwd, onlyFiles: true })` — the search directory is passed as `cwd`. Pattern selection:
 
   | prefix | suffix | patterns                                                        |
   |--------|--------|-----------------------------------------------------------------|
-  | ✓      | ✓      | `{prefix}.**.{suffix}.{ext}`                                     |
-  | ✓      | —      | `{prefix}.{ext}`, `{prefix}.**.{ext}`                            |
-  | —      | ✓      | `{suffix}.{ext}`, `**.{suffix}.{ext}`                            |
-  | —      | —      | `**.{ext}`                                                       |
+  | ✓      | ✓      | `{prefix}.*.{suffix}.{ext}`                                      |
+  | ✓      | —      | `{prefix}.{ext}`, `{prefix}.*.{ext}`                             |
+  | —      | ✓      | `{suffix}.{ext}`, `*.{suffix}.{ext}`                             |
+  | —      | —      | `*.{ext}`                                                        |
 
-  where `{ext}` expands to `{conf,js,mjs,...}`.
+  where `{ext}` expands to `{conf,js,mjs,...}`. The single `*` matches one filename segment (any characters except a path separator), so discovery is non-recursive — it does **not** descend into subdirectories. A prefix+suffix pattern therefore requires a middle segment (`project.server.conf` is not matched by `project.*.server.{ext}`).
 
 ### 2. Loading — `loadFile(input)`
 
 - Accepts a single path or an array (loaded in parallel via `Promise.all`). Relative paths resolve against `options.cwd`.
-- Parses through `locter.load()`; uses `file.default` when present.
+- Parses through `locter.read()`; uses `file.default` when present (module configs with `export default` return a record whose `.default` holds the value; plain data files — `.conf`, `.yml`, `.json` — return the parsed object directly).
 - **Skips** anything that is not a plain object (`smob.isObject`).
 - Derives `name` from the base file name: strip directory and extension, then strip a configured `prefix`/`suffix` (and the adjoining `.`). Example: with `prefix: "project"`, `project.server.conf` → name `server`.
 - Pushes `{ data, name }` onto `items` and marks the list unsorted.
@@ -104,7 +104,7 @@ A file's derived `name` acts as a key namespace. `get('server.core')` matches an
 ## Error Handling
 
 - Non-object file contents are silently ignored in `loadFile` (no throw) — invalid/empty configs are skipped rather than failing the whole load.
-- Parse/IO errors surface from `locter.load` / `locateMany` and propagate to the caller (both `load` and `loadFile` are `async` and unhandled).
+- Parse/IO errors surface from `locter.read` / `locateMany` and propagate to the caller (both `load` and `loadFile` are `async` and unhandled).
 - `get` never throws for missing keys; it returns `undefined`.
 
 ## File Structure Mapping
