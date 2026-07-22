@@ -39,10 +39,10 @@ Four suites test each collaborator at its own boundary:
 |------------------------------|-------------|-----------------------------------------------------------------------------------------|
 | `test/unit/store.spec.ts`    | `Store`     | Pure query/merge over hand-built `Element[]` — matching, precedence, deep merge, wildcards, lazy sort, injected `mergeFn`. **No filesystem.** |
 | `test/unit/naming.spec.ts`   | `NamingScheme` | `toPatterns()` per prefix/suffix combination, `toName()` derivation, and a glob↔name round-trip. |
-| `test/unit/fsstore.spec.ts`  | `FSStore`   | `load`/`loadFile`/`get` — both against real `test/data/` fixtures and via a stubbed `Reader` port (no fs) for the `.default` unwrap, non-object skip, and absolute-vs-relative path handling. |
-| `test/unit/module.spec.ts`   | `createStore` | The factory wires everything correctly end-to-end against fixtures, and honors the `naming`, `read`, and `mergeFn` injection points plus extension normalization. |
+| `test/unit/fsstore.spec.ts`  | `FSStore`   | The friendly constructor (extension normalization, `mergeFn`/`naming`/`read` injection) + discovery/`load`/`loadFile`/`get` — against real `test/data/` fixtures and via a stubbed `Reader` port (no fs) for the `.default` unwrap, non-object skip, and absolute-vs-relative path handling. |
+| `test/unit/module.spec.ts`   | `Container` | The read-only wrapper exposes `get` over a wrapped `Store`, and reflects an `FSStore` after it has been loaded. |
 
-There is no `loader.spec.ts` — the former `Loader` was folded into `FSStore`, and its tests live in `fsstore.spec.ts`. Together the four suites run 47 tests at ~99% coverage.
+There is no `loader.spec.ts` — the former `Loader` was folded into `FSStore`, and its tests live in `fsstore.spec.ts`. Together the four suites run ~43 tests at ~99% coverage.
 
 ## Fixtures (`test/data/`)
 
@@ -54,12 +54,12 @@ There is no `loader.spec.ts` — the former `Loader` was folded into `FSStore`, 
 | `project.invalid.conf` | `key=value`  | Carries the `project` prefix; loads as element `invalid` (`{app:{attr:'foo'}}`). |
 | `scalar.yml`           | YAML scalar  | Parses to a non-object (`42`) — exercises the load-time skip path.  |
 
-Most fixtures use the `project` prefix so tests pass `{ prefix: 'project' }` (to `createStore`) or a `NamingScheme({ prefix: 'project', ... })` (to `FSStore` directly). After stripping the prefix, `project.server.conf` becomes element name `server`, so `get('server.core')` resolves `core` inside it. `scalar.yml` has no prefix and resolves to a number, so it is only picked up by the no-prefix discovery test and is skipped (not stored) because it is not an object.
+Most fixtures use the `project` prefix so tests construct `new FSStore({ prefix: 'project', ... })` (or supply a custom `NamingScheme` / `Reader` via the same options). After stripping the prefix, `project.server.conf` becomes element name `server`, so `get('server.core')` resolves `core` inside it. `scalar.yml` has no prefix and resolves to a number, so it is only picked up by the no-prefix discovery test and is skipped (not stored) because it is not an object.
 
 ## Testing Philosophy
 
 - Tests assert the **expected** behavior of the load/merge/get contract described in [architecture.md](architecture.md), not just whatever the implementation happens to do. A failing test may indicate a real bug in `Store`/`FSStore`/`NamingScheme`, not a broken test.
-- Test each collaborator at its own boundary: `Store` with hand-built `Element[]` (no fs), `NamingScheme` on plain path/pattern strings, `FSStore` and `createStore` against real fixture files. Prefer real fixtures over stubbing `locter`/`pathtrace`/`smob`; because the library is a thin orchestrator over those dependencies, integration-style tests with fixtures give the most signal — add new fixtures under `test/data/` rather than mocking file I/O. For the injection points (`Options.mergeFn`, `Options.naming`, `Options.read` / the `Reader` port), pass a real implementation and assert on its observable effect.
+- Test each collaborator at its own boundary: `Store` with hand-built `Element[]` (no fs), `NamingScheme` on plain path/pattern strings, `FSStore` against real fixture files, `Container` wrapping a store. Prefer real fixtures over stubbing `locter`/`pathtrace`/`smob`; because the library is a thin orchestrator over those dependencies, integration-style tests with fixtures give the most signal — add new fixtures under `test/data/` rather than mocking file I/O. For the injection points (`StoreOptions.mergeFn`, `FSStoreOptions.naming`, `FSStoreOptions.read` / the `Reader` port), pass a real implementation and assert on its observable effect.
 
 ## Code Coverage
 
@@ -85,5 +85,5 @@ Build output is cached between jobs; lint and test both depend on a successful b
 
 1. Place test files under `test/unit/` named `*.spec.ts` / `*.test.ts` so the `include` glob picks them up.
 2. Import test globals from `vitest` (`import { describe, expect, it } from 'vitest'`).
-3. Test at the right boundary: a pure query/merge case → `new Store(...)` with hand-built elements in `store.spec.ts`; a convention case → `new NamingScheme(...)` in `naming.spec.ts`; a filesystem case → `new FSStore(...)` (add fixtures to `test/data/`) in `fsstore.spec.ts`; a factory/wiring case → `createStore({ prefix, cwd, ... })` in `module.spec.ts`.
+3. Test at the right boundary: a pure query/merge case → `new Store(...)` with hand-built elements in `store.spec.ts`; a convention case → `new NamingScheme(...)` in `naming.spec.ts`; a filesystem case → `new FSStore(...)` (add fixtures to `test/data/`) in `fsstore.spec.ts`; a read-only-view case → `new Container(store)` in `module.spec.ts`.
 4. Run `npm run test` (or `npm run test:coverage`) to verify and keep thresholds green.

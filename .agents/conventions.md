@@ -28,7 +28,7 @@
 ## Naming Conventions
 
 - **Files**: lowercase, single-word module names (`module.ts`, `fs.ts`, `types.ts`, `index.ts`).
-- **Types**: PascalCase. Option/config shapes are `type` aliases (`Options`, `StoreOptions`, `NamingOptions`, `FSStoreOptions`).
+- **Types**: PascalCase. Option/config shapes are `type` aliases (`StoreOptions`, `NamingOptions`, `FSStoreOptions`).
 - **Booleans**: prefixed (`itemsSorted`).
 - **Methods**: verb-first (`load`, `loadFile`, `findFiles`, `toName`, `toPatterns`, `merge`, `get`).
 
@@ -42,13 +42,13 @@
   | `INamingScheme`      | `NamingScheme`                 | `src/naming/`   |
   | `IStore`             | `Store` (and `FSStore`)        | `src/store/`    |
 
-  These interfaces are what callers inject through `Options` (`naming?: INamingScheme`), so the concrete class can be swapped.
+  These interfaces are what callers inject through `FSStoreOptions` (`naming?: INamingScheme`), so the concrete class can be swapped.
 
 ## File Organization
 
 - Each cohesive concept is a **directory** with `types.ts` (the interface + option types) and `module.ts` (the default implementation), plus an `index.ts` barrel: `src/naming/`, `src/store/`.
 - A directory may hold **one class per file** (`max-classes-per-file`), so a second implementation goes in its own file — e.g. `src/store/fs.ts` holds `FSStore` alongside `src/store/module.ts`'s `Store`.
-- Shared, foundational types (`Element`, `MergeFn`, `Options`) live in `src/types.ts`; the top-level `createStore` factory in `src/module.ts`.
+- Shared, foundational types (`Element`, `MergeFn`) live in `src/types.ts`; the top-level `Container` (a read-only view over one `IStore`) in `src/module.ts`.
 - `src/index.ts` is the root barrel re-exporting every module; per-directory `index.ts` files re-export their `module`/`types`/implementation files.
 
 ## TypeScript
@@ -83,7 +83,7 @@ The commit `type` drives the next release version — release-please reads the h
 
 - Automated via **release-please** (`release-please-config.json`, `.release-please-manifest.json`), run by `.github/workflows/release.yml` on push to `master`; publishing is handled by `tada5hi/monoship`.
 - `release-please-config.json` uses `release-type: node`, `include-v-in-tag: true` (tags look like `v1.0.0`), and `bump-minor-pre-major: true`.
-- **`release-as: "1.0.0"`** is currently pinned so the next release is exactly `v1.0.0`. Remove that key after the `1.0.0` release cuts, so subsequent versions are computed from commit history again.
+- Version bumps are computed from the commit history (Conventional Commit types) — the temporary `release-as` pin used to cut `v1.0.0` has been removed.
 - Do not hand-edit `version` in `package.json`, `CHANGELOG.md`, or `.release-please-manifest.json` — release-please manages them via its release PR.
 
 ## CI/CD

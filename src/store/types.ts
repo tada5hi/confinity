@@ -11,7 +11,7 @@ import type { Element, MergeFn } from '../types';
 /**
  * Contract for the store of named config elements. An implementation owns the
  * element collection, key↔name matching, path resolution and merge precedence.
- * Supply a custom implementation via {@see Options.store}.
+ * Wrap one in a {@see Container} to hand out a read-only view.
  */
 export interface IStore {
     /**
@@ -37,7 +37,17 @@ export type StoreOptions = {
 export type Reader = (filePath: string) => Promise<unknown>;
 
 export type FSStoreOptions = StoreOptions & {
-    cwd: string,
-    naming: INamingScheme,
+    cwd?: string,
+    prefix?: string,
+    suffix?: string,
+    extensions?: string[],
+    /**
+     * Custom naming implementation. Overrides `prefix`/`suffix`/`extensions`
+     * for file discovery and name derivation.
+     */
+    naming?: INamingScheme,
+    /**
+     * Custom reader/parser. Overrides the default (locter's `read`).
+     */
     read?: Reader
 };

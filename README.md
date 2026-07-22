@@ -6,7 +6,7 @@
 
 <p align="center">
     <b>Load & merge configuration across a multi-package application.</b><br>
-    A single <code>createStore()</code> discovers config files in one or many directories, parses<br>
+    An <code>FSStore</code> discovers config files in one or many directories, parses<br>
     <code>.conf</code>, <code>.yml</code>, <code>.json</code>, JS/TS &amp; more, and serves them through a single dotted-path getter.
 </p>
 
@@ -75,17 +75,17 @@ config/
 └── project.client.yml    # web.port
 ```
 
-Create a store, load it, and read it:
+Construct a store, load it, and read it — the **store is the loadable unit**:
 
 ```typescript
-import { createStore } from 'confinity';
+import { FSStore } from 'confinity';
 
-const store = createStore({
+const store = new FSStore({
     cwd: 'config',
     prefix: 'project',
 });
 
-// Discover & load every `project.*` file in `cwd`
+// Discover & parse every `project.*` file in `cwd`
 await store.load();
 
 // Values from `project.conf` and `project.server.conf` are merged
@@ -96,10 +96,19 @@ const web = store.get('client.web');
 // → { host: '1.1.1.2', port: 4000 }
 ```
 
+Hand consumers a **read-only view** with `Container` — `get` only, no `load`/`loadFile`/`add`:
+
+```typescript
+import { Container } from 'confinity';
+
+const config = new Container(store);
+config.get('server.core'); // → { host: '1.1.1.1', port: 4010 }
+```
+
 Prefer to load specific files? Skip discovery and pass paths directly:
 
 ```typescript
-const store = createStore({ prefix: 'project', cwd: 'config' });
+const store = new FSStore({ prefix: 'project', cwd: 'config' });
 
 await store.loadFile([
     'project.conf',
@@ -118,7 +127,7 @@ const db = store.get(['db', 'server.db', 'server.core.db']);
 
 ## 🔍 How It Works
 
-`createStore()` wires a **naming scheme** into a **filesystem store** (`FSStore`) that implements a **load → store → merge → get** pipeline. Discovery, parsing, path resolution, and merging are delegated to the three runtime dependencies — Confinity owns only orchestration, name derivation, and merge precedence.
+An **`FSStore`** implements a **load → store → merge → get** pipeline. Its friendly constructor builds a **naming scheme** from your `prefix`/`suffix`/`extensions`; `load`/`loadFile` discover and parse files; `get` serves merged values. The pure, in-memory query/merge engine lives on `Store` — the base `FSStore` extends. Discovery, parsing, path resolution, and merging are delegated to the three runtime dependencies — Confinity owns only orchestration, name derivation, and merge precedence.
 
 ```text
    directories / files
@@ -170,12 +179,12 @@ An element with an empty name is looked up at the root, so its keys are addressa
 
 ## ⚙️ Configuration
 
-Pass `Options` to `createStore()`. Every field is optional:
+Pass `FSStoreOptions` to the `FSStore` constructor. Every field is optional:
 
 ```typescript
-import { createStore, type Options } from 'confinity';
+import { FSStore, type FSStoreOptions } from 'confinity';
 
-const options: Options = {
+const options: FSStoreOptions = {
     cwd: process.cwd(),
     prefix: 'project',
     suffix: undefined,
@@ -183,7 +192,7 @@ const options: Options = {
     mergeFn: (target, source) => ({ ...source, ...target }),
 };
 
-const store = createStore(options);
+const store = new FSStore(options);
 ```
 
 | Option       | Type                                              | Default                                                                 | Description                                                                                   |
@@ -198,13 +207,15 @@ const store = createStore(options);
 
 ## 📚 API
 
-The package's entry point is the `createStore` factory; the classes and interfaces it builds on are exported too.
-
-### `createStore(options?): FSStore`
-
-Normalizes the options, wires a `NamingScheme` (unless a custom `naming` is given) into an `FSStore`, and returns it.
+The primary entry point is the `FSStore` class; the `Store` base, the read-only `Container` view, the `NamingScheme`, and their contracts are exported too.
 
 ### `FSStore` (extends `Store`)
+
+A `Store` that populates itself from the filesystem. Its **friendly constructor** normalizes `extensions` and builds a `NamingScheme` from `prefix`/`suffix`/`extensions` (unless a custom `naming` is supplied); parsing goes through a `Reader` port (`read`, default [`locter`](https://github.com/tada5hi/locter)'s `read`).
+
+```typescript
+new FSStore(options?: FSStoreOptions)
+```
 
 | Member     | Signature                                             | Description                                                                                     |
 |------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
@@ -213,7 +224,25 @@ Normalizes the options, wires a `NamingScheme` (unless a custom `naming` is give
 | `add`      | `add(element: Element): void`                        | *(from `Store`)* Adds a named element to the store.                                              |
 | `get`      | `get<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. |
 
-`Store` is the pure, in-memory half (`add` + `get`, no filesystem) — construct it directly if you want to feed elements in by hand.
+### `Store`
+
+The pure, in-memory half (`add` + `get`, no filesystem) that `FSStore` extends — construct it directly if you want to feed elements in by hand.
+
+```typescript
+new Store(options?: StoreOptions)   // { mergeFn? }
+```
+
+### `Container`
+
+A **read-only view over a single store**. Wrap a store (e.g. an `FSStore` you have already loaded) to hand consumers dotted-path lookups without exposing the loading or mutation surface — `load`/`loadFile`/`add` stay on the store.
+
+```typescript
+new Container(store: IStore)
+```
+
+| Member | Signature                                               | Description                                          |
+|--------|---------------------------------------------------------|------------------------------------------------------|
+| `get`  | `get<T = any>(key: string \| string[]): T \| undefined` | Delegates to the wrapped store's `get`. No mutation. |
 
 ### Types
 
@@ -227,12 +256,15 @@ type MergeFn = (target: Record<string, any>, source: Record<string, any>) => Rec
 
 type Reader = (filePath: string) => Promise<unknown>;
 
-type Options = {
+type StoreOptions = {
+    mergeFn?: MergeFn;
+};
+
+type FSStoreOptions = StoreOptions & {
     cwd?: string;
     prefix?: string;
     suffix?: string;
     extensions?: string[];
-    mergeFn?: MergeFn;
     naming?: INamingScheme;
     read?: Reader;
 };
@@ -251,10 +283,10 @@ interface IStore {
 
 ## 🧩 Extending
 
-Two seams are injectable through `Options`:
+Two seams are injectable through `FSStoreOptions`:
 
 ```typescript
-import { createStore, type INamingScheme, type Reader } from 'confinity';
+import { FSStore, type INamingScheme, type Reader } from 'confinity';
 
 // Custom naming: control which files match and how names are derived.
 const naming: INamingScheme = {
@@ -265,7 +297,7 @@ const naming: INamingScheme = {
 // Custom reader: e.g. parse a bespoke format, or read from memory.
 const read: Reader = async (filePath) => ({ /* parsed value */ });
 
-const store = createStore({ naming, read });
+const store = new FSStore({ naming, read });
 ```
 
 Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`.

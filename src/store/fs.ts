@@ -12,10 +12,28 @@ import {
 } from 'locter';
 import path from 'node:path';
 import { isObject } from 'smob';
+import { NamingScheme } from '../naming';
 import type { INamingScheme } from '../naming';
 import type { Element } from '../types';
 import { Store } from './module';
 import type { FSStoreOptions, Reader } from './types';
+
+function normalizeExtensions(input?: string[]) : string[] {
+    if (
+        input &&
+        input.length > 0
+    ) {
+        return input.map((extension) => {
+            if (extension.startsWith('.')) {
+                return extension.substring(1);
+            }
+
+            return extension;
+        });
+    }
+
+    return ['conf', 'js', 'mjs', 'cjs', 'ts', 'mts', 'yml', 'yaml'];
+}
 
 /**
  * A {@see Store} that can populate itself from the filesystem. Adds `load` and
@@ -31,10 +49,14 @@ export class FSStore extends Store {
 
     protected readonly reader : Reader;
 
-    constructor(options: FSStoreOptions) {
+    constructor(options: FSStoreOptions = {}) {
         super({ mergeFn: options.mergeFn });
-        this.cwd = options.cwd;
-        this.naming = options.naming;
+        this.cwd = options.cwd || process.cwd();
+        this.naming = options.naming ?? new NamingScheme({
+            prefix: options.prefix,
+            suffix: options.suffix,
+            extensions: normalizeExtensions(options.extensions),
+        });
         this.reader = options.read ?? readFile;
     }
 

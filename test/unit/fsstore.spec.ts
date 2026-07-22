@@ -7,20 +7,16 @@
 
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FSStore, NamingScheme } from '../../src';
-import type { Reader } from '../../src';
-
-const EXTENSIONS = ['conf', 'yml', 'yaml'];
+import { FSStore } from '../../src';
+import type { INamingScheme, Reader } from '../../src';
 
 describe('src/store FSStore', () => {
     describe('reader port (no filesystem)', () => {
-        const naming = new NamingScheme({ prefix: 'project', extensions: EXTENSIONS });
-
         it('should derive the element name via the naming scheme', async () => {
             const read : Reader = async () => ({ a: 1 });
             const store = new FSStore({
+                prefix: 'project',
                 cwd: '/base',
-                naming,
                 read,
             });
             await store.loadFile('project.server.conf');
@@ -31,8 +27,8 @@ describe('src/store FSStore', () => {
         it('should unwrap a module default export', async () => {
             const read : Reader = async () => ({ default: { host: '1.1.1.1' }, other: 2 });
             const store = new FSStore({
+                prefix: 'project',
                 cwd: '/base',
-                naming,
                 read,
             });
             await store.loadFile('project.server.conf');
@@ -43,8 +39,8 @@ describe('src/store FSStore', () => {
         it('should skip a non-object parse result', async () => {
             const read : Reader = async () => 42;
             const store = new FSStore({
+                prefix: 'project',
                 cwd: '/base',
-                naming,
                 read,
             });
             await store.loadFile('project.server.conf');
@@ -55,8 +51,8 @@ describe('src/store FSStore', () => {
         it('should skip a non-object default export', async () => {
             const read : Reader = async () => ({ default: 5 });
             const store = new FSStore({
+                prefix: 'project',
                 cwd: '/base',
-                naming,
                 read,
             });
             await store.loadFile('project.server.conf');
@@ -67,8 +63,8 @@ describe('src/store FSStore', () => {
         it('should honor absolute paths and load arrays in parallel', async () => {
             const read : Reader = async (filePath) => ({ from: filePath });
             const store = new FSStore({
+                prefix: 'project',
                 cwd: '/base',
-                naming,
                 read,
             });
             await store.loadFile([
@@ -82,60 +78,81 @@ describe('src/store FSStore', () => {
         });
     });
 
-    describe('discovery against fixtures', () => {
+    describe('friendly options + discovery against fixtures', () => {
         it('should discover prefixed files across a relative directory', async () => {
-            const naming = new NamingScheme({ prefix: 'project', extensions: EXTENSIONS });
-            const store = new FSStore({ cwd: process.cwd(), naming });
+            const store = new FSStore({ prefix: 'project' });
             await store.load('test/data');
 
             expect(store.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
             expect(store.get('client.web')).toEqual({ host: '1.1.1.2', port: 4000 });
         });
 
-        it('should discover across an absolute directory', async () => {
-            const naming = new NamingScheme({ prefix: 'project', extensions: EXTENSIONS });
-            const store = new FSStore({ cwd: process.cwd(), naming });
-            await store.load(path.resolve('test/data'));
-
-            expect(store.get('server.core').port).toEqual(4010);
-        });
-
-        it('should default to the configured cwd and skip non-object files', async () => {
-            const naming = new NamingScheme({ extensions: EXTENSIONS });
-            const store = new FSStore({ cwd: path.resolve('test/data'), naming });
+        it('should default discovery to the configured cwd and skip non-object files', async () => {
+            const store = new FSStore({ cwd: path.resolve('test/data') });
             // Every file is matched (no prefix/suffix); scalar.yml (42) is skipped.
             await store.load();
 
             expect(store.get<string>('project.db.host')).toEqual('127.0.0.1');
         });
 
+        it('should normalize custom extensions (strip a leading dot)', async () => {
+            const store = new FSStore({
+                prefix: 'project',
+                extensions: ['.yml', 'yaml'],
+                cwd: 'test/data',
+            });
+            await store.load();
+
+            expect(store.get('client.web').port).toEqual(4000);
+        });
+
         it('should require a middle segment for a prefix+suffix pattern', async () => {
-            const naming = new NamingScheme({
+            const store = new FSStore({
                 prefix: 'project',
                 suffix: 'server',
-                extensions: EXTENSIONS,
+                cwd: 'test/data',
             });
-            const store = new FSStore({ cwd: process.cwd(), naming });
-            await store.load('test/data');
+            await store.load();
 
             // project.server.conf has no middle segment → not matched.
             expect(store.get('project')).toBeUndefined();
         });
 
         it('should derive names from a suffix-only pattern', async () => {
-            const naming = new NamingScheme({ suffix: 'server', extensions: EXTENSIONS });
-            const store = new FSStore({ cwd: process.cwd(), naming });
-            await store.load('test/data');
+            const store = new FSStore({ suffix: 'server', cwd: 'test/data' });
+            await store.load();
 
             expect(store.get('project.core').port).toEqual(4010);
         });
 
-        it('should load a single fixture file directly', async () => {
-            const naming = new NamingScheme({ prefix: 'project', extensions: EXTENSIONS });
-            const store = new FSStore({ cwd: path.resolve('test/data'), naming });
-            await store.loadFile('project.server.conf');
+        it('should use a custom merge function', async () => {
+            let called = false;
+            const store = new FSStore({
+                prefix: 'project',
+                cwd: 'test/data',
+                mergeFn: (target, source) => {
+                    called = true;
+                    return { ...source, ...target };
+                },
+            });
+            await store.loadFile([
+                'project.conf',
+                'project.server.conf',
+            ]);
 
-            expect(store.get('server.core')).toMatchObject({ port: 4010 });
+            expect(store.get(['db', 'server.db'])).toBeDefined();
+            expect(called).toBe(true);
+        });
+
+        it('should accept a custom naming implementation', async () => {
+            const naming : INamingScheme = {
+                toPatterns: () => ['project.server.conf'],
+                toName: () => 'custom',
+            };
+            const store = new FSStore({ naming, cwd: 'test/data' });
+            await store.load();
+
+            expect(store.get('custom.core.port')).toEqual(4010);
         });
     });
 });

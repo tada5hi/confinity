@@ -8,8 +8,8 @@ Confinity is a **single-package**, **ESM-only** TypeScript library. Source lives
 confinity/
 ├── src/
 │   ├── index.ts               # Root barrel: re-exports module + naming + store + types (public API)
-│   ├── module.ts              # createStore() factory — normalizes Options, wires NamingScheme → FSStore
-│   ├── types.ts               # Foundational types: Element, MergeFn, Options
+│   ├── module.ts              # Container — read-only view (get) over a single IStore
+│   ├── types.ts               # Foundational types: Element, MergeFn
 │   ├── naming/
 │   │   ├── index.ts           # Barrel: re-exports module + types
 │   │   ├── module.ts          # NamingScheme (implements INamingScheme) — prefix/suffix/extensions convention
@@ -25,7 +25,7 @@ confinity/
 │   │   ├── store.spec.ts      # Pure Store (query/merge) tests
 │   │   ├── naming.spec.ts     # NamingScheme (toPatterns/toName) tests
 │   │   ├── fsstore.spec.ts    # FSStore (load/loadFile/get + reader port) tests
-│   │   └── module.spec.ts     # createStore factory tests
+│   │   └── module.spec.ts     # Container (read-only wrapper) tests
 │   └── data/                  # Fixture config files loaded by the tests
 │       ├── project.conf          # key=value (.conf) fixture
 │       ├── project.server.conf   # key=value (.conf) fixture
@@ -47,17 +47,22 @@ confinity/
 | Module                 | Purpose                                                                                             |
 |------------------------|-----------------------------------------------------------------------------------------------------|
 | `src/index.ts`         | Root public barrel. `export *` from `./module`, `./naming`, `./store`, `./types`.                   |
-| `src/module.ts`        | `createStore(options?)` factory — normalizes options, builds a `NamingScheme`, returns an `FSStore`.|
-| `src/types.ts`         | Foundational public types: `Element`, `MergeFn`, `Options`.                                         |
+| `src/module.ts`        | `Container` — a read-only view (`get` only) over a single `IStore`.                                 |
+| `src/types.ts`         | Foundational public types: `Element`, `MergeFn`.                                                    |
 | `src/naming/module.ts` | `NamingScheme` (implements `INamingScheme`) — both directions of the prefix/suffix/extensions convention. |
 | `src/naming/types.ts`  | The `INamingScheme` contract and `NamingOptions`.                                                   |
 | `src/store/module.ts`  | `Store` (implements `IStore`) — the pure, in-memory query/merge engine.                             |
 | `src/store/fs.ts`      | `FSStore extends Store` — adds the filesystem concern (`load`/`loadFile`).                          |
 | `src/store/types.ts`   | The `IStore` contract, `StoreOptions`, the `Reader` port, and `FSStoreOptions`.                     |
 
-### `createStore` factory (`src/module.ts`)
+### `Container` (`src/module.ts`)
 
-`createStore(options?: Options): FSStore` is the public entry point. It normalizes `extensions` (strips leading `.`), resolves `cwd` (default `process.cwd()`), builds a `NamingScheme` from `prefix`/`suffix`/`extensions` **unless** a custom `naming` is supplied, and passes `mergeFn`/`read` through to a new `FSStore`. `store` is **not** an option — the factory owns store construction.
+`new Container(store: IStore)` is a **read-only view over a single store**. It holds the store and exposes only `get<T>(key)`, delegating to it — no `load`/`loadFile`/`add`. Wrap an already-loaded `FSStore` (or any `IStore`) to hand consumers dotted-path lookups without the loading/mutation surface.
+
+| Member                        | Visibility  | Role                                                                       |
+|-------------------------------|-------------|----------------------------------------------------------------------------|
+| `constructor(store)`          | public      | Stores the wrapped `IStore`.                                               |
+| `get<T>(key)`                 | public      | Delegates to `store.get<T>(key)`. Read-only — no mutation.                 |
 
 ### `Store` surface (`src/store/module.ts`)
 
@@ -72,7 +77,7 @@ confinity/
 
 | Member                        | Visibility  | Role                                                                       |
 |-------------------------------|-------------|----------------------------------------------------------------------------|
-| `constructor(options)`        | public      | Stores `cwd`, `naming`, and the `Reader` (default locter `read`).          |
+| `constructor(options?)`       | public      | Friendly ctor: resolves `cwd`, normalizes `extensions` + builds a `NamingScheme` (unless `naming` given), resolves the `Reader` (default locter `read`), passes `mergeFn` to `Store`. |
 | `load(input?)`                | public      | Discovers config files in one/many directories (default cwd), then `add`s each. |
 | `loadFile(input)`             | public      | Loads a single file (or array) directly, deriving each `name`.             |
 | `fromDirectories(input?)`     | protected   | Resolves directories, discovers files, delegates to `fromFiles`.           |
@@ -117,8 +122,8 @@ Dev tooling (tsdown, vitest, ESLint, commitlint, release-please, husky) is all s
 
 - **Config discovery & parsing** → delegated to `locter` (Confinity does not read files itself; the parse step is a swappable `Reader` port defaulting to locter's `read`).
 - **Path/key resolution** → delegated to `pathtrace`.
-- **Merging** → delegated to `smob` (swappable via `Options.mergeFn`).
-- **Convention (name ↔ glob patterns)** → owned by `NamingScheme` (swappable via `Options.naming`).
+- **Merging** → delegated to `smob` (swappable via `StoreOptions.mergeFn`).
+- **Convention (name ↔ glob patterns)** → owned by `NamingScheme` (swappable via `FSStoreOptions.naming`).
 - **Query & merge precedence** → owned by `Store` (`src/store/module.ts`).
-- **Filesystem loading (directory resolution, discovery, parsing orchestration)** → owned by `FSStore` (`src/store/fs.ts`).
-- **Wiring** → owned by the `createStore` factory (`src/module.ts`).
+- **Filesystem loading (directory resolution, discovery, parsing orchestration) + wiring** → owned by `FSStore` (`src/store/fs.ts`); its friendly constructor builds the `NamingScheme` from `prefix`/`suffix`/`extensions`.
+- **Read-only view** → owned by `Container` (`src/module.ts`), wrapping a single `IStore` as a `get`-only facade.

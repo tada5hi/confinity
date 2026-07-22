@@ -6,11 +6,14 @@
 > (NamingScheme). Shipped as one self-contained refactor.
 
 > **As shipped.** The `Loader` was **not** a standalone class — its filesystem logic was folded
-> into `FSStore extends Store` (`src/store/fs.ts`), so `load`/`loadFile` and the pure `add`/`get`
-> live on one object. `Container` was removed entirely and replaced by the `createStore(options)`
-> factory (`src/module.ts`), which wires a `NamingScheme` into an `FSStore`. Two `I`-prefixed
-> contracts were added — `INamingScheme` and `IStore` — and both the naming scheme and the reader
-> port are injectable via `Options` (`naming?: INamingScheme`, `read?: Reader`).
+> into `FSStore extends Store` (`src/store/fs.ts`), whose **friendly constructor** builds a
+> `NamingScheme` from `prefix`/`suffix`/`extensions`, so `load`/`loadFile` and the pure `add`/`get`
+> live on one object. The `createStore` factory was **removed** — you construct an `FSStore`
+> directly. `Container` (`src/module.ts`) is now a **read-only view over a single `IStore`** (not a
+> façade with `load`/`loadFile`): it exposes only `get`, and loading/mutation stay on the wrapped
+> store. Two `I`-prefixed contracts were added — `INamingScheme` and `IStore` — and both the naming
+> scheme and the reader port are injectable via `FSStoreOptions` (`naming?: INamingScheme`,
+> `read?: Reader`).
 
 ## Problem
 
