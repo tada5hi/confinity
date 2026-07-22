@@ -30,8 +30,6 @@
 
 <br>
 
-> 🚧 **Work in Progress** — Confinity is under active development and its API may still change before `1.0`.
-
 ## Table of Contents
 
 - [Why Confinity?](#-why-confinity)
