@@ -77,7 +77,7 @@ The commit `type` drives the next release version — release-please reads the h
 
 - `.github/workflows/main.yml` (CI) triggers on push/PR to `develop`, `master`, `next`, `beta`, `alpha` (Node 24): **Install → Build → (Lint, Test)** plus an independent **Typecheck** job. Composite actions live in `.github/actions/install` and `.github/actions/build`, caching `node_modules` (keyed on `package-lock.json`) and `dist/`.
 - `.github/workflows/release.yml` (Release) runs release-please on `master`.
-- `develop` is the primary development branch; dependabot targets `develop` (`.github/dependabot.yml`).
+- `master` is the default and release branch; dependabot targets `master` (`.github/dependabot.yml`).
 
 ## Best Practices
 
