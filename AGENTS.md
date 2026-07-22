@@ -47,6 +47,16 @@ The package exposes a single ESM entry point (`src/index.ts`) that re-exports ev
 - **[Testing](.agents/testing.md)** — Vitest + v8 coverage setup, fixture data, and thresholds
 - **[Conventions](.agents/conventions.md)** — tsdown build, ESLint flat config, commit convention, and the release-please pipeline
 
+## Plans
+
+Architecture-deepening RFCs (make `Container`'s internals testable at their own boundary).
+Each is a self-contained internal refactor that keeps the public `Container` API unchanged and
+is prototyped in its own worktree/PR:
+
+1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]`.
+2. [Extract a `NamingScheme`](.agents/plans/002-naming-scheme.md) — the prefix/suffix/extension convention (both directions).
+3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2).
+
 ## Commits, Issues & Pull Requests
 
 - Commits follow **[Conventional Commits](https://www.conventionalcommits.org)**, enforced by commitlint (`@tada5hi/commitlint-config`) on the husky `commit-msg` hook. Releases are cut automatically by **release-please** from the commit history, so the commit type/scope matters.
