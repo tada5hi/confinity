@@ -16,9 +16,9 @@ confinity/
 │   │   └── types.ts           # INamingScheme, NamingOptions
 │   └── store/
 │       ├── index.ts           # Barrel: re-exports base + fs + module + types
-│       ├── base.ts            # AbstractStore (implements IStore) — get/getAsync both throw by default
-│       ├── module.ts          # Store extends AbstractStore — pure in-memory query/merge engine (sync get)
-│       ├── fs.ts              # FSStore extends Store — filesystem load/loadFile + lazy getAsync
+│       ├── base.ts            # AbstractStore (implements IStore) — get/getSync both throw by default
+│       ├── module.ts          # Store extends AbstractStore — pure in-memory query/merge engine (sync getSync)
+│       ├── fs.ts              # FSStore extends Store — filesystem load/loadFile + lazy get
 │       └── types.ts           # IStore, StoreOptions, Reader, FSStoreOptions
 ├── test/
 │   ├── vitest.config.ts       # Vitest config (include globs + v8 coverage thresholds)
@@ -48,32 +48,32 @@ confinity/
 | Module                 | Purpose                                                                                             |
 |------------------------|-----------------------------------------------------------------------------------------------------|
 | `src/index.ts`         | Root public barrel. `export *` from `./module`, `./naming`, `./store`, `./types`.                   |
-| `src/module.ts`        | `Container` — a read-only view (`get`/`getAsync`) over a single `IStore`.                           |
+| `src/module.ts`        | `Container` — a read-only view (`get`/`getSync`) over a single `IStore`.                           |
 | `src/types.ts`         | Foundational public types: `Element`, `MergeFn`.                                                    |
 | `src/naming/module.ts` | `NamingScheme` (implements `INamingScheme`) — both directions of the prefix/suffix/extensions convention. |
 | `src/naming/types.ts`  | The `INamingScheme` contract and `NamingOptions`.                                                   |
-| `src/store/base.ts`    | `AbstractStore` (implements `IStore`) — abstract base whose `get`/`getAsync` both throw "unsupported"; a concrete store overrides only the variant(s) it serves. |
-| `src/store/module.ts`  | `Store extends AbstractStore` — the pure, in-memory query/merge engine (implements sync `get`; leaves `getAsync` throwing). |
-| `src/store/fs.ts`      | `FSStore extends Store` — adds the filesystem concern (`load`/`loadFile`) and overrides `getAsync` to lazily load (memoized). |
-| `src/store/types.ts`   | The `IStore` contract (`get` + `getAsync`), `StoreOptions`, the `Reader` port, and `FSStoreOptions`. |
+| `src/store/base.ts`    | `AbstractStore` (implements `IStore`) — abstract base whose `get`/`getSync` both throw "unsupported"; a concrete store overrides only the variant(s) it serves. |
+| `src/store/module.ts`  | `Store extends AbstractStore` — the pure, in-memory query/merge engine (implements sync `getSync`; leaves `get` throwing). |
+| `src/store/fs.ts`      | `FSStore extends Store` — adds the filesystem concern (`load`/`loadFile`) and overrides `get` to lazily load (memoized). |
+| `src/store/types.ts`   | The `IStore` contract (`get` + `getSync`), `StoreOptions`, the `Reader` port, and `FSStoreOptions`. |
 
 ### `Container` (`src/module.ts`)
 
-`new Container(store: IStore)` is a **read-only view over a single store**. It holds the store and exposes only `get<T>(key)` and `getAsync<T>(key)`, delegating to it — no `load`/`loadFile`/`add`. Wrap an already-loaded `FSStore` (or any `IStore`) to hand consumers dotted-path lookups without the loading/mutation surface.
+`new Container(store: IStore)` is a **read-only view over a single store**. It holds the store and exposes only `get<T>(key)` and `getSync<T>(key)`, delegating to it — no `load`/`loadFile`/`add`. Wrap an already-loaded `FSStore` (or any `IStore`) to hand consumers dotted-path lookups without the loading/mutation surface.
 
 | Member                        | Visibility  | Role                                                                       |
 |-------------------------------|-------------|----------------------------------------------------------------------------|
 | `constructor(store)`          | public      | Stores the wrapped `IStore`.                                               |
-| `get<T>(key)`                 | public      | Delegates to `store.get<T>(key)`. Read-only — no mutation.                 |
-| `getAsync<T>(key)`            | public      | Delegates to `store.getAsync<T>(key)`; propagates the store's throw if that variant is unsupported. |
+| `getSync<T>(key)`             | public      | Delegates to `store.getSync<T>(key)`. Read-only — no mutation.             |
+| `get<T>(key)`                 | public      | Delegates to `store.get<T>(key)`; propagates the store's throw if that variant is unsupported. |
 
 ### `AbstractStore` surface (`src/store/base.ts`)
 
 | Member                        | Visibility  | Role                                                                       |
 |-------------------------------|-------------|----------------------------------------------------------------------------|
 | `add(element)`                | abstract    | Left for the concrete store to implement.                                  |
-| `get<T>(key)`                 | public      | **Throws** "unsupported" by default; a sync store overrides it.            |
-| `getAsync<T>(key)`            | public      | **Throws** "unsupported" by default; an async store overrides it.          |
+| `getSync<T>(key)`             | public      | **Throws** "unsupported" by default; a sync store overrides it.            |
+| `get<T>(key)`                 | public      | **Throws** "unsupported" by default; an async store overrides it.          |
 
 ### `Store` surface (`src/store/module.ts`, extends `AbstractStore`)
 
@@ -81,8 +81,8 @@ confinity/
 |-------------------------------|-------------|----------------------------------------------------------------------------|
 | `constructor(options?)`       | public      | Seeds an empty item list; resolves `mergeFn` (default smob merger).        |
 | `add(element)`                | public      | Appends a named `Element`; marks the list unsorted.                        |
-| `get<T>(key)`                 | public      | Resolves a dotted key (or array of keys) across elements, merged (sync). Overrides the throwing base. |
-| `getAsync<T>(key)`            | —           | *Not overridden* — inherits the throwing default; a memory store is sync-only. |
+| `getSync<T>(key)`             | public      | Resolves a dotted key (or array of keys) across elements, merged (sync). Overrides the throwing base. |
+| `get<T>(key)`                 | —           | *Not overridden* — inherits the throwing default; a memory store is sync-only. |
 | `merge(primary, secondary)`   | protected   | Object-vs-object deep merge, otherwise first-defined wins.                  |
 
 ### `FSStore` surface (`src/store/fs.ts`, extends `Store`)
@@ -90,7 +90,7 @@ confinity/
 | Member                        | Visibility  | Role                                                                       |
 |-------------------------------|-------------|----------------------------------------------------------------------------|
 | `constructor(options?)`       | public      | Friendly ctor: resolves `cwd`, normalizes `extensions` + builds a `NamingScheme` (unless `naming` given), resolves the `Reader` (default locter `read`), passes `mergeFn` to `Store`. |
-| `getAsync<T>(key)`            | public      | Overrides the throwing default: lazily loads on the first call (memoized via a shared `loading` promise; skipped once `loaded`), then delegates to sync `get`. |
+| `get<T>(key)`                 | public      | Overrides the throwing default: lazily loads on the first call (memoized via a shared `loading` promise; skipped once `loaded`), then delegates to sync `getSync`. |
 | `load(input?)`                | public      | Discovers config files in one/many directories (default cwd), then `add`s each; marks `loaded`. |
 | `loadFile(input)`             | public      | Loads a single file (or array) directly, deriving each `name`; marks `loaded`. |
 | `fromDirectories(input?)`     | protected   | Resolves directories, discovers files, delegates to `fromFiles`.           |
@@ -137,7 +137,7 @@ Dev tooling (tsdown, vitest, ESLint, commitlint, release-please, husky) is all s
 - **Path/key resolution** → delegated to `pathtrace`.
 - **Merging** → delegated to `smob` (swappable via `StoreOptions.mergeFn`).
 - **Convention (name ↔ glob patterns)** → owned by `NamingScheme` (swappable via `FSStoreOptions.naming`).
-- **Read capability contract (sync `get` + async `getAsync`, unsupported variant throws)** → owned by `AbstractStore` (`src/store/base.ts`); concrete stores override the variant(s) they serve.
-- **Query & merge precedence (sync `get`)** → owned by `Store` (`src/store/module.ts`).
-- **Filesystem loading (directory resolution, discovery, parsing orchestration) + wiring + lazy async `getAsync`** → owned by `FSStore` (`src/store/fs.ts`); its friendly constructor builds the `NamingScheme` from `prefix`/`suffix`/`extensions`.
-- **Read-only view** → owned by `Container` (`src/module.ts`), wrapping a single `IStore` as a `get`/`getAsync` facade (delegates both).
+- **Read capability contract (sync `getSync` + async `get`, unsupported variant throws)** → owned by `AbstractStore` (`src/store/base.ts`); concrete stores override the variant(s) they serve.
+- **Query & merge precedence (sync `getSync`)** → owned by `Store` (`src/store/module.ts`).
+- **Filesystem loading (directory resolution, discovery, parsing orchestration) + wiring + lazy async `get`** → owned by `FSStore` (`src/store/fs.ts`); its friendly constructor builds the `NamingScheme` from `prefix`/`suffix`/`extensions`.
+- **Read-only view** → owned by `Container` (`src/module.ts`), wrapping a single `IStore` as a `get`/`getSync` facade (delegates both).

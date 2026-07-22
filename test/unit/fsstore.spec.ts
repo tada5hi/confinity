@@ -21,7 +21,7 @@ describe('src/store FSStore', () => {
             });
             await store.loadFile('project.server.conf');
 
-            expect(store.get('server')).toEqual({ a: 1 });
+            expect(store.getSync('server')).toEqual({ a: 1 });
         });
 
         it('should unwrap a module default export', async () => {
@@ -33,7 +33,7 @@ describe('src/store FSStore', () => {
             });
             await store.loadFile('project.server.conf');
 
-            expect(store.get('server')).toEqual({ host: '1.1.1.1' });
+            expect(store.getSync('server')).toEqual({ host: '1.1.1.1' });
         });
 
         it('should skip a non-object parse result', async () => {
@@ -45,7 +45,7 @@ describe('src/store FSStore', () => {
             });
             await store.loadFile('project.server.conf');
 
-            expect(store.get('server')).toBeUndefined();
+            expect(store.getSync('server')).toBeUndefined();
         });
 
         it('should skip a non-object default export', async () => {
@@ -57,7 +57,7 @@ describe('src/store FSStore', () => {
             });
             await store.loadFile('project.server.conf');
 
-            expect(store.get('server')).toBeUndefined();
+            expect(store.getSync('server')).toBeUndefined();
         });
 
         it('should honor absolute paths and load arrays in parallel', async () => {
@@ -73,8 +73,8 @@ describe('src/store FSStore', () => {
             ]);
 
             // Absolute input is passed through unchanged (not re-resolved against cwd).
-            expect(store.get('client')).toEqual({ from: path.resolve('/abs/project.client.conf') });
-            expect(store.get('server')).toEqual({ from: path.resolve('/base/project.server.conf') });
+            expect(store.getSync('client')).toEqual({ from: path.resolve('/abs/project.client.conf') });
+            expect(store.getSync('server')).toEqual({ from: path.resolve('/base/project.server.conf') });
         });
     });
 
@@ -83,8 +83,8 @@ describe('src/store FSStore', () => {
             const store = new FSStore({ prefix: 'project' });
             await store.load('test/data');
 
-            expect(store.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
-            expect(store.get('client.web')).toEqual({ host: '1.1.1.2', port: 4000 });
+            expect(store.getSync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+            expect(store.getSync('client.web')).toEqual({ host: '1.1.1.2', port: 4000 });
         });
 
         it('should default discovery to the configured cwd and skip non-object files', async () => {
@@ -92,7 +92,7 @@ describe('src/store FSStore', () => {
             // Every file is matched (no prefix/suffix); scalar.yml (42) is skipped.
             await store.load();
 
-            expect(store.get<string>('project.db.host')).toEqual('127.0.0.1');
+            expect(store.getSync<string>('project.db.host')).toEqual('127.0.0.1');
         });
 
         it('should normalize custom extensions (strip a leading dot)', async () => {
@@ -103,7 +103,7 @@ describe('src/store FSStore', () => {
             });
             await store.load();
 
-            expect(store.get('client.web').port).toEqual(4000);
+            expect(store.getSync('client.web').port).toEqual(4000);
         });
 
         it('should require a middle segment for a prefix+suffix pattern', async () => {
@@ -115,14 +115,14 @@ describe('src/store FSStore', () => {
             await store.load();
 
             // project.server.conf has no middle segment → not matched.
-            expect(store.get('project')).toBeUndefined();
+            expect(store.getSync('project')).toBeUndefined();
         });
 
         it('should derive names from a suffix-only pattern', async () => {
             const store = new FSStore({ suffix: 'server', cwd: 'test/data' });
             await store.load();
 
-            expect(store.get('project.core').port).toEqual(4010);
+            expect(store.getSync('project.core').port).toEqual(4010);
         });
 
         it('should use a custom merge function', async () => {
@@ -140,7 +140,7 @@ describe('src/store FSStore', () => {
                 'project.server.conf',
             ]);
 
-            expect(store.get(['db', 'server.db'])).toBeDefined();
+            expect(store.getSync(['db', 'server.db'])).toBeDefined();
             expect(called).toBe(true);
         });
 
@@ -152,24 +152,24 @@ describe('src/store FSStore', () => {
             const store = new FSStore({ naming, cwd: 'test/data' });
             await store.load();
 
-            expect(store.get('custom.core.port')).toEqual(4010);
+            expect(store.getSync('custom.core.port')).toEqual(4010);
         });
     });
 
     describe('async / lazy loading', () => {
-        it('should lazily load on the first getAsync (no explicit load)', async () => {
+        it('should lazily load on the first async get() (no explicit load)', async () => {
             const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
 
-            // Sync get sees nothing until something is loaded.
-            expect(store.get('server.core')).toBeUndefined();
+            // Sync getSync() sees nothing until something is loaded.
+            expect(store.getSync('server.core')).toBeUndefined();
 
-            expect(await store.getAsync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+            expect(await store.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
 
             // Now it is in memory, so the sync path works too.
-            expect(store.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+            expect(store.getSync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
         });
 
-        it('should load once across concurrent getAsync calls', async () => {
+        it('should load once across concurrent async get() calls', async () => {
             let reads = 0;
             const read : Reader = async () => {
                 reads += 1;
@@ -182,8 +182,8 @@ describe('src/store FSStore', () => {
             });
 
             await Promise.all([
-                store.getAsync('a'),
-                store.getAsync('b'),
+                store.get('a'),
+                store.get('b'),
             ]);
 
             // The 4 `project.*` fixtures are read once each — the load is not repeated.
@@ -205,7 +205,7 @@ describe('src/store FSStore', () => {
             await store.load();
             const afterEager = reads;
 
-            await store.getAsync('a');
+            await store.get('a');
 
             expect(reads).toEqual(afterEager);
         });

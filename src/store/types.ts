@@ -22,18 +22,19 @@ export interface IStore {
     /**
      * Resolve a dotted key (or array of keys), deep-merged across all elements.
      *
-     * Synchronous read of whatever is currently in memory. Throws if the store
-     * has no synchronous variant (see {@see AbstractStore}).
+     * Asynchronous read (the default); a filesystem store lazily loads on the
+     * first call. Throws if the store has no asynchronous variant (see
+     * {@see AbstractStore}).
      */
-    get<T = any>(key: string | string[]) : T | undefined;
+    get<T = any>(key: string | string[]) : Promise<T | undefined>;
 
     /**
      * Resolve a dotted key (or array of keys), deep-merged across all elements.
      *
-     * Asynchronous read; a filesystem store lazily loads on the first call.
-     * Throws if the store has no asynchronous variant (see {@see AbstractStore}).
+     * Synchronous read of whatever is currently in memory. Throws if the store
+     * has no synchronous variant (see {@see AbstractStore}).
      */
-    getAsync<T = any>(key: string | string[]) : Promise<T | undefined>;
+    getSync<T = any>(key: string | string[]) : T | undefined;
 }
 
 export type StoreOptions = {

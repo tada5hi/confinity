@@ -14,7 +14,7 @@ import type { StoreOptions } from './types';
 /**
  * Default in-memory {@see IStore} implementation. Owns the element array, its
  * lazy sort, key↔name matching, path resolution (via pathtrace), and merge
- * precedence. Synchronous only — `getAsync` throws (inherited from
+ * precedence. Synchronous only — the async `get` throws (inherited from
  * {@see AbstractStore}); an in-memory lookup has no reason to be async.
  */
 export class Store extends AbstractStore {
@@ -39,7 +39,7 @@ export class Store extends AbstractStore {
         this.itemsSorted = false;
     }
 
-    override get<T = any>(key: string | string[]) : T | undefined {
+    override getSync<T = any>(key: string | string[]) : T | undefined {
         if (!this.itemsSorted) {
             this.items.sort((a, b) => a.name.localeCompare(b.name));
             this.itemsSorted = true;
@@ -49,7 +49,7 @@ export class Store extends AbstractStore {
 
         if (Array.isArray(key)) {
             for (const keyItem of key) {
-                const value = this.get(keyItem);
+                const value = this.getSync(keyItem);
                 if (typeof output !== 'undefined') {
                     output = this.merge(value, output);
                 } else {

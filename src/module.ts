@@ -21,11 +21,11 @@ export class Container {
         this.store = store;
     }
 
-    get<T = any>(key: string | string[]) : T | undefined {
+    get<T = any>(key: string | string[]) : Promise<T | undefined> {
         return this.store.get<T>(key);
     }
 
-    getAsync<T = any>(key: string | string[]) : Promise<T | undefined> {
-        return this.store.getAsync<T>(key);
+    getSync<T = any>(key: string | string[]) : T | undefined {
+        return this.store.getSync<T>(key);
     }
 }

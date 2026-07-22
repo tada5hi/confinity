@@ -17,11 +17,11 @@ import type { IStore } from './types';
 export abstract class AbstractStore implements IStore {
     abstract add(element: Element) : void;
 
-    get<T = any>(key: string | string[]) : T | undefined {
-        throw new Error(`This store has no synchronous get() for "${String(key)}" — use getAsync().`);
+    async get<T = any>(key: string | string[]) : Promise<T | undefined> {
+        throw new Error(`This store has no asynchronous get() for "${String(key)}" — use getSync().`);
     }
 
-    async getAsync<T = any>(key: string | string[]) : Promise<T | undefined> {
-        throw new Error(`This store has no asynchronous getAsync() for "${String(key)}" — use get().`);
+    getSync<T = any>(key: string | string[]) : T | undefined {
+        throw new Error(`This store has no synchronous getSync() for "${String(key)}" — use get().`);
     }
 }

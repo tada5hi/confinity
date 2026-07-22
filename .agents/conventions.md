@@ -44,7 +44,7 @@
 
   These interfaces are what callers inject through `FSStoreOptions` (`naming?: INamingScheme`), so the concrete class can be swapped.
 
-- `IStore` additionally has a shared **abstract base**, `AbstractStore` (`src/store/base.ts`), whose read methods (`get`/`getAsync`) **throw "unsupported" by default** — `Store`/`FSStore` extend it and override only the variant(s) they serve. The `I<ClassName>` rule still holds (`IStore` ↔ `Store`/`FSStore`); `AbstractStore` is the throwing base beneath them, not a separate contract.
+- `IStore` additionally has a shared **abstract base**, `AbstractStore` (`src/store/base.ts`), whose read methods (`get`/`getSync`) **throw "unsupported" by default** — `Store`/`FSStore` extend it and override only the variant(s) they serve. The `I<ClassName>` rule still holds (`IStore` ↔ `Store`/`FSStore`); `AbstractStore` is the throwing base beneath them, not a separate contract.
 
 ## File Organization
 

@@ -75,13 +75,13 @@ export class FSStore extends Store {
      *
      * @param key
      */
-    override async getAsync<T = any>(key: string | string[]) : Promise<T | undefined> {
+    override async get<T = any>(key: string | string[]) : Promise<T | undefined> {
         if (!this.loaded) {
             this.loading = this.loading ?? this.load();
             await this.loading;
         }
 
-        return this.get<T>(key);
+        return this.getSync<T>(key);
     }
 
     /**
