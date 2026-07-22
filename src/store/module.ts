@@ -8,14 +8,16 @@
 import { expandPath, getPathInfo } from 'pathtrace';
 import { createMerger, isObject } from 'smob';
 import type { Element, MergeFn } from '../types';
-import type { IStore, StoreOptions } from './types';
+import { AbstractStore } from './base';
+import type { StoreOptions } from './types';
 
 /**
- * Default {@see IStore} implementation: an in-memory store of named config
- * elements. Owns the element array, its lazy sort, key↔name matching, path
- * resolution (via pathtrace), and merge precedence.
+ * Default in-memory {@see IStore} implementation. Owns the element array, its
+ * lazy sort, key↔name matching, path resolution (via pathtrace), and merge
+ * precedence. Synchronous only — `getAsync` throws (inherited from
+ * {@see AbstractStore}); an in-memory lookup has no reason to be async.
  */
-export class Store implements IStore {
+export class Store extends AbstractStore {
     protected items : Element[];
 
     protected itemsSorted : boolean;
@@ -23,6 +25,7 @@ export class Store implements IStore {
     protected readonly mergeFn : MergeFn;
 
     constructor(options: StoreOptions = {}) {
+        super();
         this.items = [];
         this.itemsSorted = true;
         this.mergeFn = options.mergeFn ?? createMerger({
@@ -36,7 +39,7 @@ export class Store implements IStore {
         this.itemsSorted = false;
     }
 
-    get<T = any>(key: string | string[]) : T | undefined {
+    override get<T = any>(key: string | string[]) : T | undefined {
         if (!this.itemsSorted) {
             this.items.sort((a, b) => a.name.localeCompare(b.name));
             this.itemsSorted = true;

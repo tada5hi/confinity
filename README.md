@@ -125,6 +125,29 @@ const db = store.get(['db', 'server.db', 'server.core.db']);
 // → { host: '127.0.0.1', user: 'admin', password: 'start123', database: 'app' }
 ```
 
+### Sync vs. async (lazy) reads
+
+Reads come in two variants. `get` is **synchronous** — it returns whatever is currently loaded. `getAsync` is **asynchronous** and, on an `FSStore`, **lazily loads on the first call**, then reads — the load is **memoized** (runs at most once, is shared across concurrent callers, and is skipped if config was already loaded via `load()`/`loadFile()`). This gives two usage modes:
+
+```typescript
+// eager: load once at boot, then cheap synchronous reads
+const store = new FSStore({ prefix: 'project', cwd: 'config' });
+await store.load();
+store.get('server.core');            // sync
+
+// lazy: no explicit load, async reads (loads on first getAsync, memoized)
+const store = new FSStore({ prefix: 'project', cwd: 'config' });
+await store.getAsync('server.core');
+```
+
+Not every store serves both variants — the unsupported one throws:
+
+| Store                             | `get` (sync)                    | `getAsync` (async) |
+|-----------------------------------|:-------------------------------:|:------------------:|
+| `Store` (memory)                  | ✓                               | ✗ throws           |
+| `FSStore`                         | ✓                               | ✓ (lazy, memoized) |
+| custom (`extends AbstractStore`)  | whatever it implements; the other throws            |
+
 ## 🔍 How It Works
 
 An **`FSStore`** implements a **load → store → merge → get** pipeline. Its friendly constructor builds a **naming scheme** from your `prefix`/`suffix`/`extensions`; `load`/`loadFile` discover and parse files; `get` serves merged values. The pure, in-memory query/merge engine lives on `Store` — the base `FSStore` extends. Discovery, parsing, path resolution, and merging are delegated to the three runtime dependencies — Confinity owns only orchestration, name derivation, and merge precedence.
@@ -207,7 +230,7 @@ const store = new FSStore(options);
 
 ## 📚 API
 
-The primary entry point is the `FSStore` class; the `Store` base, the read-only `Container` view, the `NamingScheme`, and their contracts are exported too.
+The primary entry point is the `FSStore` class; the `Store` base, the `AbstractStore` base, the read-only `Container` view, the `NamingScheme`, and their contracts are exported too. Reads come in two variants: a synchronous `get` and an asynchronous `getAsync` (which an `FSStore` uses to lazily load) — a store serves the variant(s) it implements and **throws** for the others (see the capability matrix under [Quick Start](#-quick-start)).
 
 ### `FSStore` (extends `Store`)
 
@@ -222,15 +245,20 @@ new FSStore(options?: FSStoreOptions)
 | `load`     | `load(input?: string \| string[]): Promise<void>`    | Discovers config files in one or many directories (defaults to `cwd`), then loads each.         |
 | `loadFile` | `loadFile(input: string \| string[]): Promise<void>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                      |
 | `add`      | `add(element: Element): void`                        | *(from `Store`)* Adds a named element to the store.                                              |
-| `get`      | `get<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. |
+| `get`      | `get<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. Reads only what is currently loaded. |
+| `getAsync` | `getAsync<T = any>(key: string \| string[]): Promise<T \| undefined>` | Like `get`, but async — lazily loads from the filesystem on the first call (memoized), then resolves. |
 
 ### `Store`
 
-The pure, in-memory half (`add` + `get`, no filesystem) that `FSStore` extends — construct it directly if you want to feed elements in by hand.
+The pure, in-memory half (`add` + `get`, no filesystem) that `FSStore` extends — construct it directly if you want to feed elements in by hand. It is **synchronous only**: an in-memory lookup has no reason to be async, so `getAsync` throws (inherited from `AbstractStore`).
 
 ```typescript
 new Store(options?: StoreOptions)   // { mergeFn? }
 ```
+
+### `AbstractStore`
+
+The abstract base that every store extends — it implements `IStore` with both `get` and `getAsync` **throwing "unsupported" by default**. A concrete store overrides only the variant(s) it can serve, so a sync-only or async-only store is trivial (implement one; the other throws automatically). `Store` overrides `get`; `FSStore` additionally overrides `getAsync`.
 
 ### `Container`
 
@@ -240,9 +268,10 @@ A **read-only view over a single store**. Wrap a store (e.g. an `FSStore` you ha
 new Container(store: IStore)
 ```
 
-| Member | Signature                                               | Description                                          |
-|--------|---------------------------------------------------------|------------------------------------------------------|
-| `get`  | `get<T = any>(key: string \| string[]): T \| undefined` | Delegates to the wrapped store's `get`. No mutation. |
+| Member     | Signature                                               | Description                                          |
+|------------|---------------------------------------------------------|------------------------------------------------------|
+| `get`      | `get<T = any>(key: string \| string[]): T \| undefined` | Delegates to the wrapped store's `get`. No mutation. |
+| `getAsync` | `getAsync<T = any>(key: string \| string[]): Promise<T \| undefined>` | Delegates to the wrapped store's `getAsync`; propagates its throw if that variant is unsupported. |
 
 ### Types
 
@@ -277,7 +306,8 @@ interface INamingScheme {
 
 interface IStore {
     add(element: Element): void;
-    get<T = any>(key: string | string[]): T | undefined;
+    get<T = any>(key: string | string[]): T | undefined;               // sync; throws if the store has no sync variant
+    getAsync<T = any>(key: string | string[]): Promise<T | undefined>; // async/lazy; throws if the store has no async variant
 }
 ```
 
@@ -300,7 +330,7 @@ const read: Reader = async (filePath) => ({ /* parsed value */ });
 const store = new FSStore({ naming, read });
 ```
 
-Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`.
+Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`. To write a store from scratch, extend `AbstractStore` and override only the read variant(s) you can serve (`get`, `getAsync`, or both); the unimplemented one throws automatically, so a sync-only or async-only store needs no boilerplate.
 
 ## 🔀 Merge Semantics
 

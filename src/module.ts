@@ -24,4 +24,8 @@ export class Container {
     get<T = any>(key: string | string[]) : T | undefined {
         return this.store.get<T>(key);
     }
+
+    getAsync<T = any>(key: string | string[]) : Promise<T | undefined> {
+        return this.store.getAsync<T>(key);
+    }
 }

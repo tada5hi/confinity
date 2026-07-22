@@ -28,4 +28,18 @@ describe('src/module Container', () => {
         expect(container.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
         expect(container.get('client.web')).toEqual({ host: '1.1.1.2', port: 4000 });
     });
+
+    it('should delegate getAsync to the wrapped store (lazy)', async () => {
+        const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+        const container = new Container(store);
+
+        // No explicit load — getAsync triggers it.
+        expect(await container.getAsync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+    });
+
+    it('should propagate the throw when the wrapped store has no async variant', async () => {
+        const container = new Container(new Store());
+
+        await expect(container.getAsync('server')).rejects.toThrow(/asynchronous/);
+    });
 });

@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { Store } from '../../src';
+import { AbstractStore, Store } from '../../src';
 
 describe('src/store', () => {
     it('should return whole data on exact-name match', () => {
@@ -130,5 +130,35 @@ describe('src/store', () => {
         // Two get() calls exercise the "already sorted" fast path on the second.
         expect(first.get('server')).toEqual(second.get('server'));
         expect(first.get('client')).toEqual(second.get('client'));
+    });
+
+    it('should throw from getAsync — an in-memory store is synchronous', async () => {
+        const store = new Store();
+
+        await expect(store.getAsync('server')).rejects.toThrow(/asynchronous/);
+    });
+});
+
+class AsyncOnlyStore extends AbstractStore {
+    add() : void {
+        // no-op: this fixture only serves the async variant
+    }
+
+    override async getAsync<T = any>() : Promise<T | undefined> {
+        return 'async-value' as T;
+    }
+}
+
+describe('src/store AbstractStore', () => {
+    it('should throw from an unimplemented synchronous get()', () => {
+        const store = new AsyncOnlyStore();
+
+        expect(() => store.get('server')).toThrow(/synchronous/);
+    });
+
+    it('should serve the variant a store does implement', async () => {
+        const store = new AsyncOnlyStore();
+
+        await expect(store.getAsync('server')).resolves.toEqual('async-value');
     });
 });

@@ -49,6 +49,10 @@ export class FSStore extends Store {
 
     protected readonly reader : Reader;
 
+    protected loaded : boolean;
+
+    protected loading : Promise<void> | undefined;
+
     constructor(options: FSStoreOptions = {}) {
         super({ mergeFn: options.mergeFn });
         this.cwd = options.cwd || process.cwd();
@@ -58,6 +62,26 @@ export class FSStore extends Store {
             extensions: normalizeExtensions(options.extensions),
         });
         this.reader = options.read ?? readFile;
+        this.loaded = false;
+        this.loading = undefined;
+    }
+
+    /**
+     * Resolve a key, lazily loading from the filesystem on the first call.
+     *
+     * The default load (`load()`) runs at most once and is shared across
+     * concurrent callers; if config was already loaded (eagerly, or via a
+     * previous call) it is not re-loaded.
+     *
+     * @param key
+     */
+    override async getAsync<T = any>(key: string | string[]) : Promise<T | undefined> {
+        if (!this.loaded) {
+            this.loading = this.loading ?? this.load();
+            await this.loading;
+        }
+
+        return this.get<T>(key);
     }
 
     /**
@@ -71,6 +95,8 @@ export class FSStore extends Store {
         for (const element of elements) {
             this.add(element);
         }
+
+        this.loaded = true;
     }
 
     /**
@@ -83,6 +109,8 @@ export class FSStore extends Store {
         for (const element of elements) {
             this.add(element);
         }
+
+        this.loaded = true;
     }
 
     protected async fromDirectories(input?: string | string[]) : Promise<Element[]> {

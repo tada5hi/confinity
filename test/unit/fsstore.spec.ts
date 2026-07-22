@@ -155,4 +155,59 @@ describe('src/store FSStore', () => {
             expect(store.get('custom.core.port')).toEqual(4010);
         });
     });
+
+    describe('async / lazy loading', () => {
+        it('should lazily load on the first getAsync (no explicit load)', async () => {
+            const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
+            // Sync get sees nothing until something is loaded.
+            expect(store.get('server.core')).toBeUndefined();
+
+            expect(await store.getAsync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+
+            // Now it is in memory, so the sync path works too.
+            expect(store.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+        });
+
+        it('should load once across concurrent getAsync calls', async () => {
+            let reads = 0;
+            const read : Reader = async () => {
+                reads += 1;
+                return { ok: true };
+            };
+            const store = new FSStore({
+                prefix: 'project',
+                cwd: 'test/data',
+                read,
+            });
+
+            await Promise.all([
+                store.getAsync('a'),
+                store.getAsync('b'),
+            ]);
+
+            // The 4 `project.*` fixtures are read once each — the load is not repeated.
+            expect(reads).toEqual(4);
+        });
+
+        it('should not re-load when config was already loaded eagerly', async () => {
+            let reads = 0;
+            const read : Reader = async () => {
+                reads += 1;
+                return { ok: true };
+            };
+            const store = new FSStore({
+                prefix: 'project',
+                cwd: 'test/data',
+                read,
+            });
+
+            await store.load();
+            const afterEager = reads;
+
+            await store.getAsync('a');
+
+            expect(reads).toEqual(afterEager);
+        });
+    });
 });

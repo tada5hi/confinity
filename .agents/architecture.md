@@ -17,9 +17,10 @@ new Container(store) ──► read-only get(key) view over one IStore
 ```
 
 - **`NamingScheme`** (`src/naming/module.ts`, implements `INamingScheme`) owns the prefix/suffix/extensions convention in both directions: `toPatterns()` (convention → glob) and `toName(path)` (path → element name).
-- **`Store`** (`src/store/module.ts`, implements `IStore`) is the pure, in-memory query/merge engine: it owns the element array, its lazy sort, key↔name matching, path resolution, and merge precedence.
-- **`FSStore`** (`src/store/fs.ts`, extends `Store`) adds the filesystem concern: a friendly constructor that builds the naming scheme, directory resolution, glob discovery (via the naming scheme), and parsing through a `Reader` port.
-- **`Container`** (`src/module.ts`) wraps a single `IStore` as a read-only `get` view — the loadable/mutable surface stays on the store.
+- **`AbstractStore`** (`src/store/base.ts`, implements `IStore`) is the abstract base whose `get` (sync) and `getAsync` (async) **both throw "unsupported" by default** — a concrete store overrides only the variant(s) it can serve.
+- **`Store`** (`src/store/module.ts`, extends `AbstractStore`) is the pure, in-memory query/merge engine: it owns the element array, its lazy sort, key↔name matching, path resolution, and merge precedence. It implements sync `get` and is **sync-only** — `getAsync` stays the throwing default.
+- **`FSStore`** (`src/store/fs.ts`, extends `Store`) adds the filesystem concern: a friendly constructor that builds the naming scheme, directory resolution, glob discovery (via the naming scheme), and parsing through a `Reader` port. It also overrides `getAsync` to **lazily load** on the first call (memoized), so it serves both read variants.
+- **`Container`** (`src/module.ts`) wraps a single `IStore` as a read-only `get`/`getAsync` view — delegating both variants; the loadable/mutable surface stays on the store.
 
 ## Core Concepts
 
@@ -86,6 +87,12 @@ The `FSStore` **friendly constructor** normalizes these: it strips any leading `
 - The remainder is resolved with `pathtrace.expandPath` (expands wildcards) + `getPathInfo`; only existing values are merged in.
 - Returns the accumulated `output` cast to `T` (or `undefined`).
 
+### 3b. Async / lazy lookup — `FSStore.getAsync<T>(key)`
+
+- `get` (above) reads only what is **currently loaded** — on a never-loaded `FSStore` it returns `undefined`.
+- `getAsync` covers the lazy path: if the store is not yet `loaded`, it awaits a **memoized** `load()` (a shared `loading` promise, so concurrent callers trigger it once; skipped entirely if config was already loaded via `load()`/`loadFile()`), then delegates to sync `get`.
+- On the base `Store`, `getAsync` is **not** overridden — it inherits the throwing default from `AbstractStore`, since an in-memory lookup has no reason to be async.
+
 ### 4. Merge — `Store.merge(primary, secondary)`
 
 ```typescript
@@ -109,6 +116,17 @@ File formats, glob semantics, path syntax, and merge strategy are **not** reimpl
 ### Loader/query seam
 The filesystem concern (`load`/`loadFile`, discovery, parsing) lives on `FSStore`; the pure query/merge engine lives on `Store`. Because `FSStore extends Store`, the two can be tested at their own boundary — `Store` with hand-built `Element[]` (no fs), `FSStore` against fixtures or a stubbed `Reader` port. The contracts (`IStore`, `INamingScheme`) are the seams callers inject through.
 
+### Sync + async read capability contract
+`IStore` declares **both** a synchronous `get` and an asynchronous `getAsync`. `AbstractStore` (`src/store/base.ts`) implements the contract with both variants **throwing "unsupported" by default**, so a concrete store overrides only the one(s) it can serve — a sync-only or async-only store needs no boilerplate. This keeps the async/lazy loading concern out of the pure query engine while still exposing one uniform interface:
+
+| Store                            | `get` (sync) | `getAsync` (async)  |
+|----------------------------------|:------------:|:-------------------:|
+| `Store` (memory)                 | ✓            | ✗ throws            |
+| `FSStore`                        | ✓            | ✓ (lazy, memoized)  |
+| custom (`extends AbstractStore`) | whatever it implements; the other throws           |
+
+`Container` delegates **both** variants to the wrapped store, so calling a variant the store does not support propagates the store's throw.
+
 ### Swappable merge strategy
 `StoreOptions.mergeFn` lets callers replace the default merge behavior wholesale (e.g. to concatenate arrays). `Store.merge` only decides *whether* to merge (both-objects) vs take the primary; the *how* is the injected function.
 
@@ -120,16 +138,18 @@ A file's derived `name` (from `NamingScheme.toName`) acts as a key namespace. `g
 - Non-object file contents are silently ignored in `loadFile` (no throw) — invalid/empty configs are skipped rather than failing the whole load.
 - Parse/IO errors surface from the `Reader` (`locter.read`) / `locateMany` and propagate to the caller (both `load` and `loadFile` are `async` and unhandled).
 - `get` never throws for missing keys; it returns `undefined`.
+- Calling a read variant the store does not implement **throws** (the `AbstractStore` default) — e.g. `getAsync` on a memory `Store`, or `get` on an async-only custom store. This is a programming error (wrong variant for the store), not a lookup miss.
 
 ## File Structure Mapping
 
 ```text
-src/module.ts          → Container: read-only get view over one IStore
+src/module.ts          → Container: read-only get/getAsync view over one IStore
 src/types.ts           → Element, MergeFn
 src/naming/module.ts   → NamingScheme: toPatterns/toName
 src/naming/types.ts    → INamingScheme, NamingOptions
-src/store/module.ts    → Store: add/get/merge (pure query/merge engine)
-src/store/fs.ts        → FSStore extends Store: load/loadFile/findFiles
-src/store/types.ts     → IStore, StoreOptions, Reader, FSStoreOptions
+src/store/base.ts      → AbstractStore: IStore base, get/getAsync throw by default
+src/store/module.ts    → Store extends AbstractStore: add/get/merge (pure sync query/merge engine)
+src/store/fs.ts        → FSStore extends Store: load/loadFile/findFiles + lazy getAsync
+src/store/types.ts     → IStore (get + getAsync), StoreOptions, Reader, FSStoreOptions
 src/index.ts           → public barrel
 ```

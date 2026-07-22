@@ -37,11 +37,14 @@ npm run lint           # eslint (flat config)  (lint:fix to autofix)
 
 The package exposes a single ESM entry point (`src/index.ts`) that re-exports from `module.ts`, `naming/`, `store/`, and `types.ts`:
 
-- `Container` — a read-only view over a single `IStore` (`get` only; no `load`/`loadFile`/`add`)
-- `FSStore` / `Store` — the filesystem store (`load`, `loadFile`) and the pure query/merge engine (`add`, `get`); `FSStore extends Store`
+- `Container` — a read-only view over a single `IStore` (`get`/`getAsync` only; no `load`/`loadFile`/`add`)
+- `FSStore` / `Store` — the filesystem store (`load`, `loadFile`) and the pure query/merge engine (`add`, `get`); `FSStore extends Store extends AbstractStore`
+- `AbstractStore` — the abstract `IStore` base whose `get`/`getAsync` both throw "unsupported" by default; extend it to build a sync-only or async-only store (override only the variant you serve)
 - `NamingScheme` — the prefix/suffix/extensions convention (`toPatterns`, `toName`)
 - `INamingScheme`, `IStore` — the class-implemented contracts (`INamingScheme` injected via `FSStoreOptions.naming`; `IStore` is what `Container` wraps)
 - `Element`, `MergeFn`, `Reader`, `StoreOptions`, `NamingOptions`, `FSStoreOptions` — supporting types
+
+> **Reads are sync + async.** `get` is synchronous (reads what is currently loaded); `getAsync` is asynchronous and, on `FSStore`, lazily loads on the first call (memoized). A store serves the variant(s) it implements and throws for the rest — `Store` is sync-only (`getAsync` throws); `FSStore` serves both; `Container` delegates both.
 
 ## Detailed Guides
 

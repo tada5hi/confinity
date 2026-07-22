@@ -44,6 +44,8 @@
 
   These interfaces are what callers inject through `FSStoreOptions` (`naming?: INamingScheme`), so the concrete class can be swapped.
 
+- `IStore` additionally has a shared **abstract base**, `AbstractStore` (`src/store/base.ts`), whose read methods (`get`/`getAsync`) **throw "unsupported" by default** — `Store`/`FSStore` extend it and override only the variant(s) they serve. The `I<ClassName>` rule still holds (`IStore` ↔ `Store`/`FSStore`); `AbstractStore` is the throwing base beneath them, not a separate contract.
+
 ## File Organization
 
 - Each cohesive concept is a **directory** with `types.ts` (the interface + option types) and `module.ts` (the default implementation), plus an `index.ts` barrel: `src/naming/`, `src/store/`.
