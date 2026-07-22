@@ -1,4 +1,18 @@
-# 1.0.0-beta.1 (2024-09-02)
+# Changelog
+
+## [1.0.0](https://github.com/tada5hi/confinity/compare/v1.0.0-beta.1...v1.0.0) (2026-07-22)
+
+
+### Features
+
+* expand wildcard and glob path ([7feef86](https://github.com/tada5hi/confinity/commit/7feef86af1b9402042b606a5d2ea162bf5902fd7))
+
+
+### Bug Fixes
+
+* **deps:** bump locter from 2.1.1 to 2.1.2 ([#32](https://github.com/tada5hi/confinity/issues/32)) ([28cdec6](https://github.com/tada5hi/confinity/commit/28cdec6baf9aa225f0b569176f58a3b9f263abf7))
+
+## 1.0.0-beta.1 (2024-09-02)
 
 
 ### Bug Fixes
