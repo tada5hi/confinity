@@ -13,6 +13,7 @@ import {
 import path from 'node:path';
 import { createMerger, isObject } from 'smob';
 import { expandPath, getPathInfo } from 'pathtrace';
+import { NamingScheme } from './naming';
 import type {
     Element,
     MergeFn,
@@ -27,10 +28,17 @@ export class Container {
 
     protected readonly options : NormalizedOptions;
 
+    protected readonly naming : NamingScheme;
+
     constructor(options: Options = {}) {
         this.options = this.normalizeOptions(options);
         this.items = [];
         this.itemsSorted = true;
+        this.naming = new NamingScheme({
+            prefix: this.options.prefix,
+            suffix: this.options.suffix,
+            extensions: this.options.extensions,
+        });
     }
 
     get<T = any>(key: string | string[]) : T | undefined {
@@ -145,36 +153,7 @@ export class Container {
             return;
         }
 
-        let inputNormalized = input.replace(/\\/g, '/');
-        if (inputNormalized.includes('/')) {
-            inputNormalized = inputNormalized.substring(inputNormalized.lastIndexOf('/') + 1);
-        }
-
-        let name = inputNormalized.substring(0, inputNormalized.lastIndexOf('.'));
-
-        if (
-            this.options.prefix &&
-            name.startsWith(this.options.prefix)
-        ) {
-            let startIndex = this.options.prefix.length;
-            if (name.charAt(startIndex) === '.') {
-                startIndex++;
-            }
-
-            name = name.substring(startIndex);
-        }
-
-        if (
-            this.options.suffix &&
-            name.endsWith(this.options.suffix)
-        ) {
-            let startIndex = name.length - this.options.suffix.length;
-            if (name.charAt(startIndex - 1) === '.') {
-                startIndex--;
-            }
-
-            name = name.substring(0, startIndex);
-        }
+        const name = this.naming.toName(input);
 
         this.items.push({
             data,
@@ -185,29 +164,7 @@ export class Container {
     }
 
     protected async findFiles(cwd?: string[] | string) : Promise<string[]> {
-        const patterns : string[] = [];
-        const extension = `{${this.options.extensions.join(',')}}`;
-
-        if (
-            this.options.prefix &&
-            this.options.suffix
-        ) {
-            patterns.push(`${this.options.prefix}.*.${this.options.suffix}.${extension}`);
-        } else if (this.options.prefix) {
-            patterns.push(
-                `${this.options.prefix}.${extension}`,
-                `${this.options.prefix}.*.${extension}`,
-            );
-        } else if (this.options.suffix) {
-            patterns.push(
-                `${this.options.suffix}.${extension}`,
-                `*.${this.options.suffix}.${extension}`,
-            );
-        } else {
-            patterns.push(`*.${extension}`);
-        }
-
-        const locations = await locateMany(patterns, { cwd, onlyFiles: true });
+        const locations = await locateMany(this.naming.toPatterns(), { cwd, onlyFiles: true });
 
         return locations.map(
             (location) => buildFilePath(location),

@@ -6,4 +6,5 @@
  */
 
 export * from './module';
+export * from './naming';
 export * from './types';
