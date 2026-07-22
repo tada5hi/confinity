@@ -1,11 +1,248 @@
-# Confinity 🌐
+<p align="center">
+    <img src="assets/logo.svg" alt="Confinity" width="128" height="128" />
+</p>
 
-[![main](https://github.com/tada5hi/confinity/actions/workflows/main.yml/badge.svg)](https://github.com/tada5hi/confinity/actions/workflows/main.yml)
-[![Known Vulnerabilities](https://snyk.io/test/github/tada5hi/confinity/badge.svg)](https://snyk.io/test/github/tada5hi/confinity)
-[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white)](https://conventionalcommits.org)
+<h1 align="center">Confinity</h1>
 
-This repository contains a library to load configurations in the context of a multi package application.
+<p align="center">
+    <b>Load & merge configuration across a multi-package application.</b><br>
+    One <code>Container</code> discovers config files in one or many directories, parses<br>
+    <code>.conf</code>, <code>.yml</code>, <code>.json</code>, JS/TS &amp; more, and serves them through a single dotted-path getter.
+</p>
 
-> 🚧 **Work in Progress**
->
-> Confinity is currently under active development and is not yet ready for production.
+<p align="center">
+    <a href="https://github.com/tada5hi/confinity/actions/workflows/main.yml"><img src="https://github.com/tada5hi/confinity/actions/workflows/main.yml/badge.svg" alt="CI" /></a>
+    <a href="https://www.npmjs.com/package/confinity"><img src="https://img.shields.io/npm/v/confinity.svg?logo=npm&logoColor=white" alt="npm version" /></a>
+    <a href="https://snyk.io/test/github/tada5hi/confinity"><img src="https://snyk.io/test/github/tada5hi/confinity/badge.svg" alt="Known Vulnerabilities" /></a>
+    <a href="https://conventionalcommits.org"><img src="https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196?logo=conventionalcommits&logoColor=white" alt="Conventional Commits" /></a>
+    <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
+</p>
+
+<p align="center">
+    <a href="#-quick-start"><b>Quick Start</b></a>
+    ·
+    <a href="#-how-it-works">How It Works</a>
+    ·
+    <a href="#-configuration">Configuration</a>
+    ·
+    <a href="#-api">API</a>
+</p>
+
+<br>
+
+## Table of Contents
+
+- [Why Confinity?](#-why-confinity)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [How It Works](#-how-it-works)
+- [File Discovery](#-file-discovery)
+- [Configuration](#-configuration)
+- [API](#-api)
+- [Merge Semantics](#-merge-semantics)
+- [Requirements](#-requirements)
+- [License](#-license)
+
+## ✨ Why Confinity?
+
+Large applications rarely keep their configuration in a single file. Services, clients, and databases each grow their own settings — sometimes split across packages, sometimes layered as overrides. Confinity gives you **one place to read all of it**:
+
+- **📁 Multi-directory discovery** — point at one directory or many; files are located with glob patterns, never recursively.
+- **🧩 Format-agnostic** — `.conf`, `.yml`/`.yaml`, `.json`, and `.js`/`.mjs`/`.cjs`/`.ts`/`.mts` modules all load through the same pipeline (parsing delegated to [`locter`](https://github.com/tada5hi/locter)).
+- **🔗 Deep-merge on read** — a single `get('server.core')` collects and merges matches from **every** loaded file, so config can be split or layered freely.
+- **🏷️ Name-based namespacing** — a file's name (after stripping a `prefix`/`suffix`) becomes a key namespace, so `project.server.conf` answers `get('server.*')`.
+- **🎯 Dotted & wildcard paths** — resolve nested values (and wildcard segments) via [`pathtrace`](https://github.com/tada5hi/pathtrace).
+- **🔧 Swappable merge strategy** — bring your own `mergeFn` to change how values combine.
+- **📦 ESM-only, tiny core** — a thin orchestrator over `locter`, `pathtrace`, and `smob`; no config parsing reinvented.
+
+## 📥 Installation
+
+```bash
+npm install confinity
+```
+
+> **ESM-only.** Confinity ships as an ES module (`"type": "module"`) and requires **Node.js `>=22`**. Import it with `import`, not `require()`.
+
+## 🚀 Quick Start
+
+Given a config directory:
+
+```text
+config/
+├── project.conf          # server.core.host, client.web.host, db.*
+├── project.server.conf   # core.port, db.database
+└── project.client.yml    # web.port
+```
+
+Load and read it:
+
+```typescript
+import { Container } from 'confinity';
+
+const container = new Container({
+    cwd: 'config',
+    prefix: 'project',
+});
+
+// Discover & load every `project.*` file in `cwd`
+await container.load();
+
+// Values from `project.conf` and `project.server.conf` are merged
+const core = container.get('server.core');
+// → { host: '1.1.1.1', port: 4010 }
+
+const web = container.get('client.web');
+// → { host: '1.1.1.2', port: 4000 }
+```
+
+Prefer to load specific files? Skip discovery and pass paths directly:
+
+```typescript
+const container = new Container({ prefix: 'project', cwd: 'config' });
+
+await container.loadFile([
+    'project.conf',
+    'project.server.conf',
+]);
+
+container.get('server.core'); // → { host: '1.1.1.1', port: 4010 }
+```
+
+Merge several keys, letting later keys take precedence for scalars:
+
+```typescript
+const db = container.get(['db', 'server.db', 'server.core.db']);
+// → { host: '127.0.0.1', user: 'admin', password: 'start123', database: 'app' }
+```
+
+## 🔍 How It Works
+
+Confinity is built around a single `Container` implementing a **load → store → merge → get** pipeline. Discovery, parsing, path resolution, and merging are delegated to its three runtime dependencies — the `Container` owns only orchestration, name derivation, and merge precedence.
+
+```text
+   directories / files
+           │
+           ▼
+  ┌───────────────────┐     locate (glob) + parse
+  │      locter       │───────────────────────────►  Element[] { name, data }
+  └───────────────────┘                                       │
+                                                              │  get(key)
+                          ┌───────────────────────────────────┤
+                          │  1. match key against Element.name
+                          ▼
+                 ┌───────────────────┐   resolve remainder (dotted / wildcard)
+                 │     pathtrace     │
+                 └───────────────────┘
+                          │
+                          ▼
+                 ┌───────────────────┐   deep-merge every match
+                 │       smob        │──────────────────────────►  value
+                 └───────────────────┘
+```
+
+1. **Discovery** — `load()` builds glob patterns from your `prefix`/`suffix`/`extensions` and locates matching files in each directory (non-recursively).
+2. **Loading** — each file is parsed, and everything that resolves to a plain object is stored as an `Element` — `{ name, data }`. A file's `name` is its base name with the configured `prefix`/`suffix` (and the adjoining `.`) stripped. Non-object contents (e.g. a scalar YAML) are silently skipped.
+3. **Lookup** — `get(key)` walks every stored element, matches the key against each element's `name`, resolves the remaining path within `data`, and merges all matches into one result.
+
+## 🗂️ File Discovery
+
+`findFiles` builds glob patterns from your options. The single `*` matches one filename segment (no path separator), so **discovery never descends into subdirectories**:
+
+| `prefix` | `suffix` | Glob patterns                                       |
+|:--------:|:--------:|-----------------------------------------------------|
+|    ✓     |    ✓     | `{prefix}.*.{suffix}.{ext}`                          |
+|    ✓     |    —     | `{prefix}.{ext}`, `{prefix}.*.{ext}`                |
+|    —     |    ✓     | `{suffix}.{ext}`, `*.{suffix}.{ext}`                |
+|    —     |    —     | `*.{ext}`                                           |
+
+…where `{ext}` expands to your configured `extensions`. Because a `prefix` **and** `suffix` require a middle segment, `project.server.conf` is *not* matched by a `project` + `server` pattern.
+
+**Name derivation.** With `prefix: 'project'`:
+
+| File                  | Element name | Answers keys like            |
+|-----------------------|--------------|------------------------------|
+| `project.conf`        | *(empty)*    | `server.core`, `db.host`     |
+| `project.server.conf` | `server`     | `server.core`, `server.db`   |
+| `project.client.yml`  | `client`     | `client.web`                 |
+
+An element with an empty name is looked up at the root, so its keys are addressable directly.
+
+## ⚙️ Configuration
+
+Pass `Options` to the constructor. Every field is optional:
+
+```typescript
+import { Container, type Options } from 'confinity';
+
+const options: Options = {
+    cwd: process.cwd(),
+    prefix: 'project',
+    suffix: undefined,
+    extensions: ['conf', 'yml', 'yaml', 'json', 'js', 'ts'],
+    mergeFn: (target, source) => ({ ...source, ...target }),
+};
+
+const container = new Container(options);
+```
+
+| Option       | Type                                              | Default                                                                 | Description                                                                                   |
+|--------------|---------------------------------------------------|-------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| `cwd`        | `string`                                          | `process.cwd()`                                                         | Base directory for resolving relative directories and file paths.                             |
+| `prefix`     | `string`                                          | —                                                                       | File-name prefix (e.g. `project`); stripped when deriving an element's `name`.                |
+| `suffix`     | `string`                                          | —                                                                       | File-name suffix; stripped when deriving an element's `name`.                                 |
+| `extensions` | `string[]`                                         | `conf`, `js`, `mjs`, `cjs`, `ts`, `mts`, `yml`, `yaml`                  | Extensions to discover. A leading `.` is stripped automatically.                              |
+| `mergeFn`    | `(target, source) => Record<string, any>`         | [`smob`](https://github.com/tada5hi/smob) merger (arrays replaced, immutable) | Strategy used to deep-merge two objects during `get`.                                   |
+
+## 📚 API
+
+The package exposes a single entry point re-exporting the `Container` class and its supporting types.
+
+### `Container`
+
+| Member                        | Signature                                             | Description                                                                                     |
+|-------------------------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `constructor`                 | `new Container(options?: Options)`                    | Normalizes options and seeds an empty item list.                                                |
+| `load`                        | `load(input?: string \| string[]): Promise<void>`    | Discovers config files in one or many directories (defaults to `cwd`), then loads each.         |
+| `loadFile`                    | `loadFile(input: string \| string[]): Promise<void>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                      |
+| `get`                         | `get<T = any>(key: string \| string[]): T \| undefined` | Resolves a dotted key across loaded elements, merged. An array of keys is merged in order.    |
+
+### Types
+
+```typescript
+type Element = {
+    name: string;               // derived from the file name (prefix/suffix stripped)
+    data: Record<string, any>;  // parsed file contents
+};
+
+type MergeFn = (target: Record<string, any>, source: Record<string, any>) => Record<string, any>;
+
+type Options = {
+    cwd?: string;
+    prefix?: string;
+    suffix?: string;
+    extensions?: string[];
+    mergeFn?: MergeFn;
+};
+
+type NormalizedOptions = Required<Pick<Options, 'cwd' | 'extensions' | 'mergeFn'>>
+    & Pick<Options, 'prefix' | 'suffix'>;
+```
+
+## 🔀 Merge Semantics
+
+When two matches combine, `Container.merge(primary, secondary)` decides *whether* to merge — the injected `mergeFn` decides *how*:
+
+- **Two objects** → deep-merged by the configured `mergeFn`. The default [`smob`](https://github.com/tada5hi/smob) merger **replaces** arrays (does not concatenate) and is immutable (`inPlace: false`).
+- **Scalar `primary`** → wins over `secondary`.
+- **`undefined` `primary`** → yields the existing accumulator.
+
+Because accumulated results are passed as `secondary`, the more-recently-resolved value survives for non-object values — so for `get([...keys])`, later keys take precedence for scalars.
+
+## ✅ Requirements
+
+- **Node.js** `>=22`
+- **ESM only** — `import` syntax; there is no CommonJS (`require`) entry point.
+
+## 📄 License
+
+Published under the [MIT License](./LICENSE). Copyright © Peter Placzek ([tada5hi](https://github.com/tada5hi)).
