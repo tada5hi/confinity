@@ -1,0 +1,29 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Confinity logo">
+    <defs>
+        <linearGradient id="cf-stroke" x1="52" y1="96" x2="204" y2="160" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#38BDF8"/>
+            <stop offset="0.5" stop-color="#6366F1"/>
+            <stop offset="1" stop-color="#A855F7"/>
+        </linearGradient>
+        <linearGradient id="cf-fill" x1="24" y1="24" x2="232" y2="232" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#38BDF8" stop-opacity="0.16"/>
+            <stop offset="1" stop-color="#A855F7" stop-opacity="0.16"/>
+        </linearGradient>
+    </defs>
+
+    <!-- rounded app-icon tile -->
+    <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#cf-fill)"/>
+    <rect x="8.75" y="8.75" width="238.5" height="238.5" rx="55.25" stroke="url(#cf-stroke)" stroke-opacity="0.35" stroke-width="1.5"/>
+
+    <!-- infinity / merge mark: two config sources looping into one -->
+    <path d="M128 128 C112 100 68 100 68 128 C68 156 112 156 128 128 C144 100 188 100 188 128 C188 156 144 156 128 128 Z"
+          stroke="url(#cf-stroke)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- source nodes -->
+    <circle cx="68" cy="128" r="10" fill="#38BDF8"/>
+    <circle cx="188" cy="128" r="10" fill="#A855F7"/>
+
+    <!-- merged center node -->
+    <circle cx="128" cy="128" r="20" stroke="#6366F1" stroke-opacity="0.4" stroke-width="3"/>
+    <circle cx="128" cy="128" r="12" fill="#6366F1"/>
+</svg>
