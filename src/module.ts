@@ -5,91 +5,45 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-import {
-    buildFilePath,
-    locateMany,
-    read,
-} from 'locter';
-import path from 'node:path';
-import { createMerger, isObject } from 'smob';
-import { expandPath, getPathInfo } from 'pathtrace';
+import { createMerger } from 'smob';
+import { Loader } from './loader';
+import { NamingScheme } from './naming';
+import { Store } from './store';
 import type {
-    Element,
     MergeFn,
     NormalizedOptions,
     Options,
 } from './types';
 
+/**
+ * Thin façade that wires a {@see NamingScheme}, a {@see Loader} (filesystem I/O)
+ * and a {@see Store} (pure query/merge), delegating each public method to them.
+ */
 export class Container {
-    protected items : Element[];
-
-    protected itemsSorted : boolean;
-
     protected readonly options : NormalizedOptions;
+
+    protected readonly store : Store;
+
+    protected readonly loader : Loader;
 
     constructor(options: Options = {}) {
         this.options = this.normalizeOptions(options);
-        this.items = [];
-        this.itemsSorted = true;
+
+        const naming = new NamingScheme({
+            prefix: this.options.prefix,
+            suffix: this.options.suffix,
+            extensions: this.options.extensions,
+        });
+
+        this.store = new Store({ mergeFn: this.options.mergeFn });
+        this.loader = new Loader({
+            cwd: this.options.cwd,
+            naming,
+        });
     }
 
     get<T = any>(key: string | string[]) : T | undefined {
-        if (!this.itemsSorted) {
-            this.items.sort((a, b) => a.name.localeCompare(b.name));
-            this.itemsSorted = true;
-        }
-
-        let output : unknown;
-
-        if (Array.isArray(key)) {
-            for (const keyItem of key) {
-                const value = this.get(keyItem);
-                if (typeof output !== 'undefined') {
-                    output = this.merge(value, output);
-                } else {
-                    output = value;
-                }
-            }
-
-            return output as T;
-        }
-
-        for (const item of this.items) {
-            let temp: string;
-            if (item.name) {
-                if (key.length > 0) {
-                    if (key === item.name) {
-                        temp = '';
-                    } else if (key.startsWith(item.name)) {
-                        let startIndex = item.name.length;
-                        if (key.charAt(startIndex) === '.') {
-                            startIndex++;
-                        }
-                        temp = key.substring(startIndex);
-                    } else {
-                        continue;
-                    }
-                } else {
-                    temp = key;
-                }
-            } else {
-                temp = key;
-            }
-
-            if (temp.length === 0) {
-                output = this.merge(item.data, output);
-            } else {
-                const paths = expandPath(item.data, temp);
-                for (const expandedPath of paths) {
-                    const info = getPathInfo(item.data, expandedPath);
-                    if (info.exists) {
-                        output = this.merge(info.value, output);
-                    }
-                }
-            }
-        }
-
-        return output as T;
+        return this.store.get<T>(key);
     }
 
     /**
@@ -98,28 +52,10 @@ export class Container {
      * @param input
      */
     async load(input?: string | string[]) : Promise<void> {
-        let directories : string[] = [];
-        if (input) {
-            if (Array.isArray(input)) {
-                directories = input;
-            } else {
-                directories = [input];
-            }
+        const elements = await this.loader.fromDirectories(input);
+        for (const element of elements) {
+            this.store.add(element);
         }
-
-        if (directories.length > 0) {
-            directories = directories.map((directory) => (
-                path.isAbsolute(directory) ?
-                    directory :
-                    path.resolve(this.options.cwd, directory)
-            ));
-        } else {
-            directories = [this.options.cwd];
-        }
-
-        const filePaths = await this.findFiles(directories);
-
-        await this.loadFile(filePaths);
     }
 
     /**
@@ -128,90 +64,10 @@ export class Container {
      * @param input
      */
     async loadFile(input: string | string[]) : Promise<void> {
-        if (Array.isArray(input)) {
-            const promises = input.map((el) => this.loadFile(el));
-            await Promise.all(promises);
-            return;
+        const elements = await this.loader.fromFiles(input);
+        for (const element of elements) {
+            this.store.add(element);
         }
-
-        if (!path.isAbsolute(input)) {
-            input = path.resolve(this.options.cwd, input);
-        }
-
-        const file = await read(input);
-        const data = file.default ? file.default : file;
-
-        if (!isObject(data)) {
-            return;
-        }
-
-        let inputNormalized = input.replace(/\\/g, '/');
-        if (inputNormalized.includes('/')) {
-            inputNormalized = inputNormalized.substring(inputNormalized.lastIndexOf('/') + 1);
-        }
-
-        let name = inputNormalized.substring(0, inputNormalized.lastIndexOf('.'));
-
-        if (
-            this.options.prefix &&
-            name.startsWith(this.options.prefix)
-        ) {
-            let startIndex = this.options.prefix.length;
-            if (name.charAt(startIndex) === '.') {
-                startIndex++;
-            }
-
-            name = name.substring(startIndex);
-        }
-
-        if (
-            this.options.suffix &&
-            name.endsWith(this.options.suffix)
-        ) {
-            let startIndex = name.length - this.options.suffix.length;
-            if (name.charAt(startIndex - 1) === '.') {
-                startIndex--;
-            }
-
-            name = name.substring(0, startIndex);
-        }
-
-        this.items.push({
-            data,
-            name,
-        });
-
-        this.itemsSorted = false;
-    }
-
-    protected async findFiles(cwd?: string[] | string) : Promise<string[]> {
-        const patterns : string[] = [];
-        const extension = `{${this.options.extensions.join(',')}}`;
-
-        if (
-            this.options.prefix &&
-            this.options.suffix
-        ) {
-            patterns.push(`${this.options.prefix}.*.${this.options.suffix}.${extension}`);
-        } else if (this.options.prefix) {
-            patterns.push(
-                `${this.options.prefix}.${extension}`,
-                `${this.options.prefix}.*.${extension}`,
-            );
-        } else if (this.options.suffix) {
-            patterns.push(
-                `${this.options.suffix}.${extension}`,
-                `*.${this.options.suffix}.${extension}`,
-            );
-        } else {
-            patterns.push(`*.${extension}`);
-        }
-
-        const locations = await locateMany(patterns, { cwd, onlyFiles: true });
-
-        return locations.map(
-            (location) => buildFilePath(location),
-        );
     }
 
     protected normalizeOptions(input: Options) : NormalizedOptions {
@@ -248,20 +104,5 @@ export class Container {
             mergeFn,
             extensions,
         };
-    }
-
-    protected merge(primary: unknown | undefined, secondary: unknown) {
-        if (typeof primary === 'undefined') {
-            return secondary;
-        }
-
-        if (
-            isObject(primary) &&
-            isObject(secondary)
-        ) {
-            return this.options.mergeFn(primary, secondary);
-        }
-
-        return primary;
     }
 }
