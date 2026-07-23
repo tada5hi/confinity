@@ -5,9 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export type Element = {
-    name: string,
-    data: Record<string, any>
-};
-
-export type MergeFn = (target: Record<string, any>, source: Record<string, any>) => Record<string, any>;
+export * from './base';
+export * from './fs';
+export * from './module';
+export * from './types';

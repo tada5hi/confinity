@@ -27,16 +27,31 @@
 
 ## Naming Conventions
 
-- **Files**: lowercase, single-word module names (`module.ts`, `types.ts`, `index.ts`).
-- **Types**: PascalCase; option/config shapes use an `Options`/`NormalizedOptions` pair (raw input vs defaulted). See `src/types.ts`.
+- **Files**: lowercase, single-word module names (`module.ts`, `fs.ts`, `types.ts`, `index.ts`).
+- **Types**: PascalCase. Option/config shapes are `type` aliases (`StoreOptions`, `NamingOptions`, `FSStoreOptions`).
 - **Booleans**: prefixed (`itemsSorted`).
-- **Methods**: verb-first (`load`, `loadFile`, `findFiles`, `normalizeOptions`, `merge`, `get`).
+- **Methods**: verb-first (`load`, `loadFile`, `findFiles`, `toName`, `toPatterns`, `merge`, `get`).
+
+### `interface` vs `type`
+
+- Use an **`interface` only for a contract that a class implements** (a port). Everything else — data shapes, option bags, unions, function types — is a **`type` alias**.
+- Interfaces are **prefixed with `I`** and named `I<ClassName>` after their default implementation:
+
+  | Interface (contract) | Default class (implementation) | File            |
+  |----------------------|--------------------------------|-----------------|
+  | `INamingScheme`      | `NamingScheme`                 | `src/naming/`   |
+  | `IStore`             | `Store` (and `FSStore`)        | `src/store/`    |
+
+  These interfaces are what callers inject through `FSStoreOptions` (`naming?: INamingScheme`), so the concrete class can be swapped.
+
+- `IStore` additionally has a shared **abstract base**, `AbstractStore` (`src/store/base.ts`), whose read methods (`get`/`getSync`) **throw "unsupported" by default** — `Store`/`FSStore` extend it and override only the variant(s) they serve. The `I<ClassName>` rule still holds (`IStore` ↔ `Store`/`FSStore`); `AbstractStore` is the throwing base beneath them, not a separate contract.
 
 ## File Organization
 
-- Exported **types** live in `src/types.ts`; implementation lives in `src/module.ts`.
-- `src/index.ts` is the barrel — it re-exports `./module` and `./types` and defines the package's public API.
-- Add new public types to `types.ts` and re-export via the barrel; keep private/protected helpers inside `module.ts`.
+- Each cohesive concept is a **directory** with `types.ts` (the interface + option types) and `module.ts` (the default implementation), plus an `index.ts` barrel: `src/naming/`, `src/store/`.
+- A directory may hold **one class per file** (`max-classes-per-file`), so a second implementation goes in its own file — e.g. `src/store/fs.ts` holds `FSStore` alongside `src/store/module.ts`'s `Store`.
+- Shared, foundational types (`Element`, `MergeFn`) live in `src/types.ts`; the top-level `Container` (a read-only view over one `IStore`) in `src/module.ts`.
+- `src/index.ts` is the root barrel re-exporting every module; per-directory `index.ts` files re-export their `module`/`types`/implementation files.
 
 ## TypeScript
 
@@ -70,7 +85,7 @@ The commit `type` drives the next release version — release-please reads the h
 
 - Automated via **release-please** (`release-please-config.json`, `.release-please-manifest.json`), run by `.github/workflows/release.yml` on push to `master`; publishing is handled by `tada5hi/monoship`.
 - `release-please-config.json` uses `release-type: node`, `include-v-in-tag: true` (tags look like `v1.0.0`), and `bump-minor-pre-major: true`.
-- Version bumps are computed from the commit history. (A temporary `release-as: "1.0.0"` pin was used to cut `v1.0.0` and has since been removed.)
+- Version bumps are computed from the commit history (Conventional Commit types) — the temporary `release-as` pin used to cut `v1.0.0` has been removed.
 - Do not hand-edit `version` in `package.json`, `CHANGELOG.md`, or `.release-please-manifest.json` — release-please manages them via its release PR.
 
 ## CI/CD
@@ -81,6 +96,6 @@ The commit `type` drives the next release version — release-please reads the h
 
 ## Best Practices
 
-- Prefer configuring or extending the delegated dependencies (`locter`, `pathtrace`, `smob`) over adding file-parsing, path, or merge logic directly to `Container` — see [architecture.md](architecture.md).
-- Study surrounding patterns and the existing `Container` methods before adding new behavior; keep the core a thin orchestrator.
+- Prefer configuring or extending the delegated dependencies (`locter`, `pathtrace`, `smob`) over adding file-parsing, path, or merge logic directly to `Store`/`FSStore` — see [architecture.md](architecture.md).
+- Study surrounding patterns and the existing `Store`/`FSStore`/`NamingScheme` methods before adding new behavior; keep each module focused.
 - Keep changes covered by fixture-driven tests in `test/` and consistent with the conventions above.

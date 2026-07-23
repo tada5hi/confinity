@@ -1,6 +1,8 @@
 # Plan 001 — Extract a pure `Resolver`
 
-**Status:** proposed · **Candidate:** 1 of 3 · **Dependency category:** In-process (pure)
+**Status:** superseded by [003](003-loader-store-split.md) · **Candidate:** 1 of 3 · **Dependency category:** In-process (pure)
+
+> The pure query/merge engine shipped as the `Store` class (`src/store/module.ts`), implementing the `IStore` interface — see plan 003.
 
 ## Problem
 

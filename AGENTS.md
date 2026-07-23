@@ -2,7 +2,7 @@
 
 # Confinity — Agent Guide
 
-Confinity is a small TypeScript library for loading configurations in the context of a multi-package application. A single `Container` class discovers config files across one or many directories, parses them (via [locter](https://github.com/tada5hi/locter)), and exposes their values through a dotted-path getter that deep-merges matches from every loaded file. It is published as an **ESM-only** package and is currently in **beta / work-in-progress**.
+Confinity is a small TypeScript library for loading configurations in the context of a multi-package application. An `FSStore` (the filesystem store) discovers config files across one or many directories, parses them (via [locter](https://github.com/tada5hi/locter)), and exposes their values through a dotted-path getter that deep-merges matches from every loaded file. `FSStore` extends `Store` (the pure query/merge engine), with the file-name convention factored out into a `NamingScheme`; a `Container` wraps any `IStore` as a read-only `get` view to hand to consumers. It is published as an **ESM-only** package and is currently in **beta / work-in-progress**.
 
 ## Quick Reference
 
@@ -35,10 +35,16 @@ npm run lint           # eslint (flat config)  (lint:fix to autofix)
 
 ## Public API
 
-The package exposes a single ESM entry point (`src/index.ts`) that re-exports everything from `module.ts` and `types.ts`:
+The package exposes a single ESM entry point (`src/index.ts`) that re-exports from `module.ts`, `naming/`, `store/`, and `types.ts`:
 
-- `Container` — the config loader (`load`, `loadFile`, `get`)
-- `Options` / `NormalizedOptions`, `Element`, `MergeFn` — supporting types
+- `Container` — a read-only view over a single `IStore` (`get`/`getSync` only; no `load`/`loadFile`/`add`)
+- `FSStore` / `Store` — the filesystem store (`load`, `loadFile`) and the pure query/merge engine (`add`, `getSync`); `FSStore extends Store extends AbstractStore`
+- `AbstractStore` — the abstract `IStore` base whose `get`/`getSync` both throw "unsupported" by default; extend it to build a sync-only or async-only store (override only the variant you serve)
+- `NamingScheme` — the prefix/suffix/extensions convention (`toPatterns`, `toName`)
+- `INamingScheme`, `IStore` — the class-implemented contracts (`INamingScheme` injected via `FSStoreOptions.naming`; `IStore` is what `Container` wraps)
+- `Element`, `MergeFn`, `Reader`, `StoreOptions`, `NamingOptions`, `FSStoreOptions` — supporting types
+
+> **Reads are async + sync.** `get` is asynchronous and, on `FSStore`, lazily loads on the first call (memoized); `getSync` is synchronous (reads what is currently loaded). A store serves the variant(s) it implements and throws for the rest — `Store` is sync-only (`get` throws); `FSStore` serves both; `Container` delegates both.
 
 ## Detailed Guides
 
@@ -49,13 +55,13 @@ The package exposes a single ESM entry point (`src/index.ts`) that re-exports ev
 
 ## Plans
 
-Architecture-deepening RFCs (make `Container`'s internals testable at their own boundary).
-Each is a self-contained internal refactor that keeps the public `Container` API unchanged and
-is prototyped in its own worktree/PR:
+Architecture-deepening RFCs that made the store's internals testable at their own boundary.
+Plan 003 (a superset of 001 + 002) has **shipped** — see its "As shipped" note for how the
+implementation diverged from the proposal:
 
-1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]`.
+1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]` (now `Store`).
 2. [Extract a `NamingScheme`](.agents/plans/002-naming-scheme.md) — the prefix/suffix/extension convention (both directions).
-3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2).
+3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2), shipped as `FSStore extends Store`, with `Container` reduced to a read-only view over one store.
 
 ## Commits, Issues & Pull Requests
 
