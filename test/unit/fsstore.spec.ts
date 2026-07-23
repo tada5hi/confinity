@@ -60,6 +60,20 @@ describe('src/store FSStore', () => {
             expect(store.getSync('server')).toBeUndefined();
         });
 
+        it('should skip a falsy default export (unwrap by presence, not truthiness)', async () => {
+            // `export default false` must unwrap to `false` and be skipped, not
+            // stored as the wrapper object `{ default: false }`.
+            const read : Reader = async () => ({ default: false });
+            const store = new FSStore({
+                prefix: 'project',
+                cwd: '/base',
+                read,
+            });
+            await store.loadFile('project.server.conf');
+
+            expect(store.getSync('server')).toBeUndefined();
+        });
+
         it('should honor absolute paths and load arrays in parallel', async () => {
             const read : Reader = async (filePath) => ({ from: filePath });
             const store = new FSStore({
@@ -303,6 +317,13 @@ describe('src/store FSStore', () => {
 
         it('should let a later async get() honor an eager loadSync (no re-load)', async () => {
             let reads = 0;
+            let asyncReads = 0;
+            // An erroneous re-load from get() would go through the async `read`,
+            // not `readSync` — so spy on both to actually observe no re-load.
+            const read : Reader = async () => {
+                asyncReads += 1;
+                return { ok: true };
+            };
             const readSync : ReaderSync = () => {
                 reads += 1;
                 return { ok: true };
@@ -310,6 +331,7 @@ describe('src/store FSStore', () => {
             const store = new FSStore({
                 prefix: 'project',
                 cwd: 'test/data',
+                read,
                 readSync,
             });
 
@@ -319,6 +341,7 @@ describe('src/store FSStore', () => {
             // loaded is already set, so get() does not re-load asynchronously.
             await store.get('a');
             expect(reads).toEqual(afterEager);
+            expect(asyncReads).toEqual(0);
         });
     });
 });

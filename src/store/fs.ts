@@ -245,7 +245,10 @@ export class FSStore extends Store {
      * via the NamingScheme. Pure — shared by the async and sync file paths.
      */
     protected toElement(filePath: string, raw: unknown) : Element | undefined {
-        const data = isObject(raw) && raw.default ? raw.default : raw;
+        // Unwrap a module `.default` by presence, not truthiness — a falsy
+        // default export (`export default false`/`0`/`''`) must unwrap to that
+        // value and then be skipped by the isObject guard, not stored as `{ default }`.
+        const data = isObject(raw) && Object.hasOwn(raw, 'default') ? raw.default : raw;
         if (!isObject(data)) {
             return undefined;
         }
