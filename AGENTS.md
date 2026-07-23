@@ -38,13 +38,15 @@ npm run lint           # eslint (flat config)  (lint:fix to autofix)
 The package exposes a single ESM entry point (`src/index.ts`) that re-exports from `module.ts`, `naming/`, `store/`, and `types.ts`:
 
 - `Container` — a read-only view over a single `IStore` (`get`/`getSync` only; no `load`/`loadFile`/`add`)
-- `FSStore` / `Store` — the filesystem store (`load`, `loadFile`) and the pure query/merge engine (`add`, `getSync`); `FSStore extends Store extends AbstractStore`
+- `FSStore` / `Store` — the filesystem store (`load`/`loadSync`, `loadFile`/`loadFileSync`) and the pure query/merge engine (`add`, `getSync`); `FSStore extends Store extends AbstractStore`
 - `AbstractStore` — the abstract `IStore` base whose `get`/`getSync` both throw "unsupported" by default; extend it to build a sync-only or async-only store (override only the variant you serve)
 - `NamingScheme` — the prefix/suffix/extensions convention (`toPatterns`, `toName`)
 - `INamingScheme`, `IStore` — the class-implemented contracts (`INamingScheme` injected via `FSStoreOptions.naming`; `IStore` is what `Container` wraps)
-- `Element`, `MergeFn`, `Reader`, `StoreOptions`, `NamingOptions`, `FSStoreOptions` — supporting types
+- `Element`, `MergeFn`, `Reader`, `ReaderSync`, `StoreOptions`, `NamingOptions`, `FSStoreOptions` — supporting types
 
 > **Reads are async + sync.** `get` is asynchronous and, on `FSStore`, lazily loads on the first call (memoized); `getSync` is synchronous (reads what is currently loaded). A store serves the variant(s) it implements and throws for the rest — `Store` is sync-only (`get` throws); `FSStore` serves both; `Container` delegates both.
+
+> **Loads are async + sync too.** `FSStore` exposes `load`/`loadFile` (async) alongside their synchronous twins `loadSync`/`loadFileSync`; the sync twins parse through a separate `readSync` port (default locter `readSync`). Only the async `get` lazily loads — `getSync` stays a snapshot, so a fully-synchronous consumer calls `loadSync()` (or `loadFileSync()`) explicitly, then `getSync()`.
 
 ## Detailed Guides
 
@@ -56,12 +58,13 @@ The package exposes a single ESM entry point (`src/index.ts`) that re-exports fr
 ## Plans
 
 Architecture-deepening RFCs that made the store's internals testable at their own boundary.
-Plan 003 (a superset of 001 + 002) has **shipped** — see its "As shipped" note for how the
-implementation diverged from the proposal:
+Plans 003 (a superset of 001 + 002) and 004 have **shipped** — see each plan's "As shipped" note
+for how the implementation diverged from the proposal:
 
 1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]` (now `Store`).
 2. [Extract a `NamingScheme`](.agents/plans/002-naming-scheme.md) — the prefix/suffix/extension convention (both directions).
 3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2), shipped as `FSStore extends Store`, with `Container` reduced to a read-only view over one store.
+4. [Sync loading (`loadSync`/`loadFileSync`)](.agents/plans/004-sync-load.md) — hand-written sync twins of `load`/`loadFile` over extracted pure helpers, parsing via a separate `readSync` port.
 
 ## Commits, Issues & Pull Requests
 

@@ -42,11 +42,18 @@ export type StoreOptions = {
 };
 
 /**
- * Minimal reader port. Parses a file at the given path into its raw value.
- * Defaults to locter's `read`; can be substituted to unit-test the fs store's
- * naming/skip logic without touching the filesystem.
+ * Minimal asynchronous reader port. Parses a file at the given path into its
+ * raw value. Defaults to locter's `read`; can be substituted to unit-test the
+ * fs store's naming/skip logic without touching the filesystem.
  */
 export type Reader = (filePath: string) => Promise<unknown>;
+
+/**
+ * Synchronous twin of {@see Reader}, used by the store's `loadSync`/
+ * `loadFileSync`. Defaults to locter's `readSync`; substitute it (like `Reader`)
+ * to unit-test the sync load path without the filesystem.
+ */
+export type ReaderSync = (filePath: string) => unknown;
 
 export type FSStoreOptions = StoreOptions & {
     cwd?: string,
@@ -59,7 +66,12 @@ export type FSStoreOptions = StoreOptions & {
      */
     naming?: INamingScheme,
     /**
-     * Custom reader/parser. Overrides the default (locter's `read`).
+     * Custom asynchronous reader/parser. Overrides the default (locter's `read`).
      */
-    read?: Reader
+    read?: Reader,
+    /**
+     * Custom synchronous reader/parser, used by `loadSync`/`loadFileSync`.
+     * Overrides the default (locter's `readSync`).
+     */
+    readSync?: ReaderSync
 };

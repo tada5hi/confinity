@@ -54,8 +54,8 @@ confinity/
 | `src/naming/types.ts`  | The `INamingScheme` contract and `NamingOptions`.                                                   |
 | `src/store/base.ts`    | `AbstractStore` (implements `IStore`) — abstract base whose `get`/`getSync` both throw "unsupported"; a concrete store overrides only the variant(s) it serves. |
 | `src/store/module.ts`  | `Store extends AbstractStore` — the pure, in-memory query/merge engine (implements sync `getSync`; leaves `get` throwing). |
-| `src/store/fs.ts`      | `FSStore extends Store` — adds the filesystem concern (`load`/`loadFile`) and overrides `get` to lazily load (memoized). |
-| `src/store/types.ts`   | The `IStore` contract (`get` + `getSync`), `StoreOptions`, the `Reader` port, and `FSStoreOptions`. |
+| `src/store/fs.ts`      | `FSStore extends Store` — adds the filesystem concern (`load`/`loadFile` + the sync twins `loadSync`/`loadFileSync`) and overrides `get` to lazily load (memoized). |
+| `src/store/types.ts`   | The `IStore` contract (`get` + `getSync`), `StoreOptions`, the `Reader`/`ReaderSync` ports, and `FSStoreOptions`. |
 
 ### `Container` (`src/module.ts`)
 
@@ -89,13 +89,19 @@ confinity/
 
 | Member                        | Visibility  | Role                                                                       |
 |-------------------------------|-------------|----------------------------------------------------------------------------|
-| `constructor(options?)`       | public      | Friendly ctor: resolves `cwd`, normalizes `extensions` + builds a `NamingScheme` (unless `naming` given), resolves the `Reader` (default locter `read`), passes `mergeFn` to `Store`. |
+| `constructor(options?)`       | public      | Friendly ctor: resolves `cwd`, normalizes `extensions` + builds a `NamingScheme` (unless `naming` given), resolves the `Reader`/`ReaderSync` (default locter `read`/`readSync`), passes `mergeFn` to `Store`. |
 | `get<T>(key)`                 | public      | Overrides the throwing default: lazily loads on the first call (memoized via a shared `loading` promise; skipped once `loaded`), then delegates to sync `getSync`. |
 | `load(input?)`                | public      | Discovers config files in one/many directories (default cwd), then `add`s each; marks `loaded`. |
+| `loadSync(input?)`            | public      | Synchronous twin of `load` (via `fromDirectoriesSync`); does **not** run lazily from `getSync`. |
 | `loadFile(input)`             | public      | Loads a single file (or array) directly, deriving each `name`; marks `loaded`. |
-| `fromDirectories(input?)`     | protected   | Resolves directories, discovers files, delegates to `fromFiles`.           |
-| `fromFiles(input)`            | protected   | Parses file(s) in parallel; `.default` unwrap + non-object skip; derives name via `naming`. |
-| `findFiles(cwd)`              | protected   | `naming.toPatterns()` → `locateMany` → absolute file paths.                |
+| `loadFileSync(input)`         | public      | Synchronous twin of `loadFile` (via `fromFilesSync`).                      |
+| `addAll(elements)`            | protected   | `add`s each element and marks `loaded` — the shared tail of every loader.  |
+| `fromDirectories(input?)` / `…Sync` | protected | Resolve directories, discover files, delegate to `fromFiles`/`…Sync` (async vs sync twin). |
+| `fromFiles(input)` / `…Sync`  | protected   | Async: parses in parallel; sync: sequential. Both call `toElement` (`.default` unwrap + non-object skip + name). |
+| `findFiles(cwd)` / `…Sync`    | protected   | `naming.toPatterns()` → `locateMany`/`locateManySync` → absolute file paths. |
+| `resolveDirectories(input?)`  | protected   | **Pure** — input → directory list (relative resolved against `cwd`, else `cwd`). Shared by both discovery paths. |
+| `resolveFilePath(input)`      | protected   | **Pure** — resolve one path against `cwd` (absolutes untouched). Shared by both file paths. |
+| `toElement(filePath, raw)`    | protected   | **Pure** — `.default` unwrap, non-object skip, `naming.toName`; returns an `Element` or `undefined`. Shared by both file paths. |
 
 ### `NamingScheme` surface (`src/naming/module.ts`)
 
@@ -139,5 +145,5 @@ Dev tooling (tsdown, vitest, ESLint, commitlint, release-please, husky) is all s
 - **Convention (name ↔ glob patterns)** → owned by `NamingScheme` (swappable via `FSStoreOptions.naming`).
 - **Read capability contract (sync `getSync` + async `get`, unsupported variant throws)** → owned by `AbstractStore` (`src/store/base.ts`); concrete stores override the variant(s) they serve.
 - **Query & merge precedence (sync `getSync`)** → owned by `Store` (`src/store/module.ts`).
-- **Filesystem loading (directory resolution, discovery, parsing orchestration) + wiring + lazy async `get`** → owned by `FSStore` (`src/store/fs.ts`); its friendly constructor builds the `NamingScheme` from `prefix`/`suffix`/`extensions`.
+- **Filesystem loading (directory resolution, discovery, parsing orchestration) + wiring + lazy async `get`** → owned by `FSStore` (`src/store/fs.ts`); its friendly constructor builds the `NamingScheme` from `prefix`/`suffix`/`extensions`. The async loaders (`load`/`loadFile`) and their sync twins (`loadSync`/`loadFileSync`) share every pure step (`resolveDirectories`/`resolveFilePath`/`toElement`) and differ only at the two I/O calls (`locateMany`/`read` vs `locateManySync`/`readSync`).
 - **Read-only view** → owned by `Container` (`src/module.ts`), wrapping a single `IStore` as a `get`/`getSync` facade (delegates both).
