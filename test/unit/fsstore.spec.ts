@@ -8,7 +8,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FSStore } from '../../src';
-import type { INamingScheme, Reader } from '../../src';
+import type { INamingScheme, Reader, ReaderSync } from '../../src';
 
 describe('src/store FSStore', () => {
     describe('reader port (no filesystem)', () => {
@@ -50,6 +50,20 @@ describe('src/store FSStore', () => {
 
         it('should skip a non-object default export', async () => {
             const read : Reader = async () => ({ default: 5 });
+            const store = new FSStore({
+                prefix: 'project',
+                cwd: '/base',
+                read,
+            });
+            await store.loadFile('project.server.conf');
+
+            expect(store.getSync('server')).toBeUndefined();
+        });
+
+        it('should skip a falsy default export (unwrap by presence, not truthiness)', async () => {
+            // `export default false` must unwrap to `false` and be skipped, not
+            // stored as the wrapper object `{ default: false }`.
+            const read : Reader = async () => ({ default: false });
             const store = new FSStore({
                 prefix: 'project',
                 cwd: '/base',
@@ -208,6 +222,126 @@ describe('src/store FSStore', () => {
             await store.get('a');
 
             expect(reads).toEqual(afterEager);
+        });
+    });
+
+    describe('sync loading', () => {
+        it('should loadSync from a directory to parity with async load', async () => {
+            const sync = new FSStore({ prefix: 'project', cwd: 'test/data' });
+            sync.loadSync();
+
+            const async = new FSStore({ prefix: 'project', cwd: 'test/data' });
+            await async.load();
+
+            // The sync and async loaders must agree on the merged result.
+            expect(sync.getSync('server.core')).toEqual(async.getSync('server.core'));
+            expect(sync.getSync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+            expect(sync.getSync('client.web')).toEqual({ host: '1.1.1.2', port: 4000 });
+        });
+
+        it('should loadFileSync explicit file(s), deriving names via the scheme', () => {
+            const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+            store.loadFileSync([
+                'project.conf',
+                'project.server.conf',
+            ]);
+
+            expect(store.getSync('server.core').port).toEqual(4010);
+            expect(store.getSync<string>('db.host')).toEqual('127.0.0.1');
+        });
+
+        describe('readSync port (no filesystem)', () => {
+            it('should derive the element name via the naming scheme', () => {
+                const readSync : ReaderSync = () => ({ a: 1 });
+                const store = new FSStore({
+                    prefix: 'project',
+                    cwd: '/base',
+                    readSync,
+                });
+                store.loadFileSync('project.server.conf');
+
+                expect(store.getSync('server')).toEqual({ a: 1 });
+            });
+
+            it('should unwrap a module default export', () => {
+                const readSync : ReaderSync = () => ({ default: { host: '1.1.1.1' }, other: 2 });
+                const store = new FSStore({
+                    prefix: 'project',
+                    cwd: '/base',
+                    readSync,
+                });
+                store.loadFileSync('project.server.conf');
+
+                expect(store.getSync('server')).toEqual({ host: '1.1.1.1' });
+            });
+
+            it('should skip a non-object parse result', () => {
+                const readSync : ReaderSync = () => 42;
+                const store = new FSStore({
+                    prefix: 'project',
+                    cwd: '/base',
+                    readSync,
+                });
+                store.loadFileSync('project.server.conf');
+
+                expect(store.getSync('server')).toBeUndefined();
+            });
+
+            it('should honor absolute paths and derive names per file', () => {
+                const readSync : ReaderSync = (filePath) => ({ from: filePath });
+                const store = new FSStore({
+                    prefix: 'project',
+                    cwd: '/base',
+                    readSync,
+                });
+                store.loadFileSync([
+                    path.resolve('/abs/project.client.conf'),
+                    'project.server.conf',
+                ]);
+
+                expect(store.getSync('client')).toEqual({ from: path.resolve('/abs/project.client.conf') });
+                expect(store.getSync('server')).toEqual({ from: path.resolve('/base/project.server.conf') });
+            });
+        });
+
+        it('should keep getSync a snapshot — no lazy sync-load before loadSync', () => {
+            const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
+            // getSync never triggers a load itself; it reads only what is loaded.
+            expect(store.getSync('server.core')).toBeUndefined();
+
+            store.loadSync();
+
+            expect(store.getSync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
+        });
+
+        it('should let a later async get() honor an eager loadSync (no re-load)', async () => {
+            let reads = 0;
+            let asyncReads = 0;
+            // An erroneous re-load from get() would go through the async `read`,
+            // not `readSync` — so spy on both to actually observe no re-load.
+            const read : Reader = async () => {
+                asyncReads += 1;
+                return { ok: true };
+            };
+            const readSync : ReaderSync = () => {
+                reads += 1;
+                return { ok: true };
+            };
+            const store = new FSStore({
+                prefix: 'project',
+                cwd: 'test/data',
+                read,
+                readSync,
+            });
+
+            store.loadSync();
+            const afterEager = reads;
+
+            // loaded is already set, so get() does not re-load asynchronously.
+            await store.get('a');
+            expect(reads).toEqual(afterEager);
+            expect(asyncReads).toEqual(0);
         });
     });
 });

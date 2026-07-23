@@ -19,7 +19,7 @@ new Container(store) ──► read-only get(key) view over one IStore
 - **`NamingScheme`** (`src/naming/module.ts`, implements `INamingScheme`) owns the prefix/suffix/extensions convention in both directions: `toPatterns()` (convention → glob) and `toName(path)` (path → element name).
 - **`AbstractStore`** (`src/store/base.ts`, implements `IStore`) is the abstract base whose `get` (async) and `getSync` (sync) **both throw "unsupported" by default** — a concrete store overrides only the variant(s) it can serve.
 - **`Store`** (`src/store/module.ts`, extends `AbstractStore`) is the pure, in-memory query/merge engine: it owns the element array, its lazy sort, key↔name matching, path resolution, and merge precedence. It implements sync `getSync` and is **sync-only** — the async `get` stays the throwing default.
-- **`FSStore`** (`src/store/fs.ts`, extends `Store`) adds the filesystem concern: a friendly constructor that builds the naming scheme, directory resolution, glob discovery (via the naming scheme), and parsing through a `Reader` port. It also overrides `get` to **lazily load** on the first call (memoized), so it serves both read variants.
+- **`FSStore`** (`src/store/fs.ts`, extends `Store`) adds the filesystem concern: a friendly constructor that builds the naming scheme, directory resolution, glob discovery (via the naming scheme), and parsing through a `Reader` port (with a `ReaderSync` twin). It exposes both async loaders (`load`/`loadFile`) and their **sync twins** (`loadSync`/`loadFileSync`), and overrides `get` to **lazily load** on the first call (memoized), so it serves both read variants.
 - **`Container`** (`src/module.ts`) wraps a single `IStore` as a read-only `get`/`getSync` view — delegating both variants; the loadable/mutable surface stays on the store.
 
 ## Core Concepts
@@ -44,12 +44,13 @@ export type FSStoreOptions = StoreOptions & {   // StoreOptions = { mergeFn? }
     suffix?: string,            // file-name suffix
     extensions?: string[],      // default: conf, js, mjs, cjs, ts, mts, yml, yaml
     naming?: INamingScheme,     // custom convention; overrides prefix/suffix/extensions
-    read?: Reader               // custom parser; overrides the default (locter's read)
+    read?: Reader,              // custom async parser; overrides the default (locter's read)
+    readSync?: ReaderSync       // custom sync parser (for loadSync/loadFileSync); default locter's readSync
     // + mergeFn (from StoreOptions): default smob createMerger({ array:false, inPlace:false })
 };
 ```
 
-The `FSStore` **friendly constructor** normalizes these: it strips any leading `.` from `extensions`, defaults `cwd` to `process.cwd()`, and builds a `NamingScheme` from `prefix`/`suffix`/`extensions` — unless a custom `naming` is supplied, in which case those three are ignored. `mergeFn` is passed down to the `Store` base. The `naming` and `read` fields are the two injection points that let callers substitute the convention or the parser.
+The `FSStore` **friendly constructor** normalizes these: it strips any leading `.` from `extensions`, defaults `cwd` to `process.cwd()`, and builds a `NamingScheme` from `prefix`/`suffix`/`extensions` — unless a custom `naming` is supplied, in which case those three are ignored. `mergeFn` is passed down to the `Store` base. The `naming`, `read`, and `readSync` fields are the injection points that let callers substitute the convention or either (async/sync) parser.
 
 ## Data Flow
 
@@ -74,6 +75,8 @@ The `FSStore` **friendly constructor** normalizes these: it strips any leading `
 - **Skips** anything that is not a plain object (`smob.isObject`).
 - Derives `name` via `naming.toName(filePath)`: strip directory and extension, then strip a configured `prefix`/`suffix` (and the adjoining `.`). Example: with `prefix: "project"`, `project.server.conf` → name `server`.
 - `add`s `{ data, name }` to the store, marking the list unsorted.
+
+**Sync twins.** `loadSync`/`loadFileSync` mirror `load`/`loadFile` step-for-step. The two paths share every pure step — `resolveDirectories`/`resolveFilePath` (path resolution) and `toElement` (`.default` unwrap + non-object skip + name derivation) — and diverge only at the two I/O calls: `readSync` (default `locter.readSync`, injectable via `FSStoreOptions.readSync`) instead of `read`, and `locateManySync` instead of `locateMany` for discovery. The sync file path parses **sequentially** rather than via `Promise.all`. Unlike `get`, `getSync` does **not** trigger a lazy `loadSync` — it stays a snapshot of what is loaded, so a synchronous consumer calls `loadSync()`/`loadFileSync()` explicitly first.
 
 ### 3. Lookup — `Store.getSync<T>(key)`
 
@@ -127,6 +130,10 @@ The filesystem concern (`load`/`loadFile`, discovery, parsing) lives on `FSStore
 
 `Container` delegates **both** variants to the wrapped store, so calling a variant the store does not support propagates the store's throw.
 
+### Sync + async loading (hand-written twins)
+
+Loading has the same async/sync duality as reading: `FSStore` ships `load`/`loadFile` and their synchronous twins `loadSync`/`loadFileSync`, made possible because `locter` exposes sync twins of the two functions the store depends on (`locateManySync`, `readSync`). Rather than derive the twins from a shared generator body (as `locter` does internally with its `TwinOp`/`runTwin*` protocol), confinity keeps them **hand-written over extracted pure helpers** — each load body has a single I/O effect, so the pure parts (`resolveDirectories`, `resolveFilePath`, `toElement`) are shared and only the one I/O call is written twice. The generator machinery earns its keep for `locter`'s long, multi-effect bodies; for a one-effect body it would be more plumbing than it saves. The parse step's sync side is a separate injectable port (`ReaderSync`, default `locter.readSync`), the sibling of the async `Reader`. Note the asymmetry with reads: the async `get` lazily loads, but `getSync` is a pure snapshot and never triggers `loadSync` — a synchronous lazy-load would both change `getSync`'s contract and race a concurrent in-flight async `load` into double-adding elements.
+
 ### Swappable merge strategy
 `StoreOptions.mergeFn` lets callers replace the default merge behavior wholesale (e.g. to concatenate arrays). `Store.merge` only decides *whether* to merge (both-objects) vs take the primary; the *how* is the injected function.
 
@@ -149,7 +156,7 @@ src/naming/module.ts   → NamingScheme: toPatterns/toName
 src/naming/types.ts    → INamingScheme, NamingOptions
 src/store/base.ts      → AbstractStore: IStore base, get/getSync throw by default
 src/store/module.ts    → Store extends AbstractStore: add/getSync/merge (pure sync query/merge engine)
-src/store/fs.ts        → FSStore extends Store: load/loadFile/findFiles + lazy get
-src/store/types.ts     → IStore (get + getSync), StoreOptions, Reader, FSStoreOptions
+src/store/fs.ts        → FSStore extends Store: load/loadFile (+ loadSync/loadFileSync twins)/findFiles + lazy get
+src/store/types.ts     → IStore (get + getSync), StoreOptions, Reader, ReaderSync, FSStoreOptions
 src/index.ts           → public barrel
 ```
