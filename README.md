@@ -151,26 +151,25 @@ Not every store serves both variants — the unsupported one throws:
 
 An **`FSStore`** implements a **load → store → merge → get** pipeline. Its friendly constructor builds a **naming scheme** from your `prefix`/`suffix`/`extensions`; `load`/`loadFile` discover and parse files; `get` serves merged values. The pure, in-memory query/merge engine lives on `Store` — the base `FSStore` extends. Discovery, parsing, path resolution, and merging are delegated to the three runtime dependencies — Confinity owns only orchestration, name derivation, and merge precedence.
 
+Taking the `config/` directory from [Quick Start](#-quick-start), each file becomes one `Element`:
+
 ```text
-   directories / files
-           │
-           ▼
-  ┌───────────────────┐     locate (glob) + parse
-  │      locter       │───────────────────────────►  Element[] { name, data }
-  └───────────────────┘                                       │
-                                                              │  get(key)
-                          ┌───────────────────────────────────┤
-                          │  1. match key against Element.name
-                          ▼
-                 ┌───────────────────┐   resolve remainder (dotted / wildcard)
-                 │     pathtrace     │
-                 └───────────────────┘
-                          │
-                          ▼
-                 ┌───────────────────┐   deep-merge every match
-                 │       smob        │──────────────────────────►  value
-                 └───────────────────┘
+config/project.conf         →  Element { name: '',       data: { server: {…}, client: {…}, db: {…} } }
+config/project.server.conf  →  Element { name: 'server', data: { core: { port: 4010 }, db: {…} } }
+config/project.client.yml   →  Element { name: 'client', data: { web: { port: 4000 } } }
 ```
+
+…and a single read walks all of them, resolving the key against each element's `name` before merging what it found:
+
+```text
+store.get('server.core')
+  ├─ name ''        → resolve 'server.core'  → { host: '1.1.1.1' }
+  ├─ name 'client'  → no match               → skipped
+  ├─ name 'server'  → resolve 'core'         → { port: 4010 }
+  └─ merged                                  → { host: '1.1.1.1', port: 4010 }
+```
+
+So the same key is answered jointly by the root file and the file *named* after it — which is what lets one logical config be split across files or layered as overrides.
 
 1. **Discovery** — `load()` builds glob patterns from your `prefix`/`suffix`/`extensions` and locates matching files in each directory (non-recursively).
 2. **Loading** — each file is parsed, and everything that resolves to a plain object is stored as an `Element` — `{ name, data }`. A file's `name` is its base name with the configured `prefix`/`suffix` (and the adjoining `.`) stripped. Non-object contents (e.g. a scalar YAML) are silently skipped.
