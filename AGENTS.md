@@ -55,17 +55,6 @@ The package exposes a single ESM entry point (`src/index.ts`) that re-exports fr
 - **[Testing](.agents/testing.md)** — Vitest + v8 coverage setup, fixture data, and thresholds
 - **[Conventions](.agents/conventions.md)** — tsdown build, ESLint flat config, commit convention, and the release-please pipeline
 
-## Plans
-
-Architecture-deepening RFCs that made the store's internals testable at their own boundary.
-Plans 003 (a superset of 001 + 002) and 004 have **shipped** — see each plan's "As shipped" note
-for how the implementation diverged from the proposal:
-
-1. [Extract a pure `Resolver`](.agents/plans/001-resolver.md) — query + merge over `Element[]` (now `Store`).
-2. [Extract a `NamingScheme`](.agents/plans/002-naming-scheme.md) — the prefix/suffix/extension convention (both directions).
-3. [Split `Loader` (I/O) vs `Store` (pure)](.agents/plans/003-loader-store-split.md) — the full seam (superset of 1 + 2), shipped as `FSStore extends Store`, with `Container` reduced to a read-only view over one store.
-4. [Sync loading (`loadSync`/`loadFileSync`)](.agents/plans/004-sync-load.md) — hand-written sync twins of `load`/`loadFile` over extracted pure helpers, parsing via a separate `readSync` port.
-
 ## Commits, Issues & Pull Requests
 
 - Commits follow **[Conventional Commits](https://www.conventionalcommits.org)**, enforced by commitlint (`@tada5hi/commitlint-config`) on the husky `commit-msg` hook. Releases are cut automatically by **release-please** from the commit history, so the commit type/scope matters.
