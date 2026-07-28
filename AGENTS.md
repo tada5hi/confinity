@@ -2,7 +2,7 @@
 
 # Confinity — Agent Guide
 
-Confinity is a small TypeScript library for loading configurations in the context of a multi-package application. An `FSStore` (the filesystem store) discovers config files across one or many directories, parses them (via [locter](https://github.com/tada5hi/locter)), and exposes their values through a dotted-path getter that deep-merges matches from every loaded file. `FSStore` extends `Store` (the pure query/merge engine), with the file-name convention factored out into a `NamingScheme`; a `Container` wraps any `IStore` as a read-only `get` view to hand to consumers. It is published as an **ESM-only** package and is currently in **beta / work-in-progress**.
+Confinity is a small TypeScript library for loading configurations in the context of a multi-package application. An `FSStore` (the filesystem store) discovers config files across one or many directories, parses them (via [locter](https://github.com/tada5hi/locter)), and exposes their values through a dotted-path getter that deep-merges matches from every loaded file. `FSStore` extends `Store` (the pure query/merge engine), with the file-name convention factored out into a `NamingScheme`; a `Container` wraps any `IStore` as a read-only `get` view to hand to consumers. It is published as an **ESM-only** package; v1.0.0 has shipped, and v2.0.0 (the `Store`/`FSStore` restructure plus sync loading) is queued in a release-please PR.
 
 ## Quick Reference
 
