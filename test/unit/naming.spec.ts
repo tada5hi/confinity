@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { NamingScheme } from '../../src';
+import { NamingScheme, OptionsError } from '../../src';
 
 const EXTENSIONS = ['conf', 'yml', 'yaml'];
 
@@ -74,6 +74,52 @@ describe('src/naming', () => {
 
             expect(naming.toPatterns()).toEqual(['*.{conf,yml,yaml}']);
         });
+
+        it('should not brace a single extension', () => {
+            const naming = new NamingScheme({ prefix: 'project', extensions: ['conf'] });
+
+            // `{conf}` is matched literally by the glob engine, so a
+            // one-element list must be emitted bare.
+            expect(naming.toPatterns()).toEqual([
+                'project.conf',
+                'project.*.conf',
+            ]);
+        });
+    });
+
+    describe('validation', () => {
+        it('should reject an empty extension list', () => {
+            expect(() => new NamingScheme({ extensions: [] })).toThrow(OptionsError);
+        });
+
+        it('should reject an empty extension entry', () => {
+            expect(() => new NamingScheme({ extensions: [''] })).toThrow(OptionsError);
+        });
+
+        it.each([
+            ['a/b'],
+            ['..'],
+            ['../secrets/app'],
+            ['**'],
+            ['a*'],
+            ['a{b,c}'],
+            ['a,b'],
+            ['a[b]'],
+            ['!a'],
+        ])('should reject the glob-unsafe prefix %s', (prefix) => {
+            expect(() => new NamingScheme({ prefix, extensions: EXTENSIONS }))
+                .toThrow(OptionsError);
+        });
+
+        it('should reject a glob-unsafe suffix', () => {
+            expect(() => new NamingScheme({ suffix: '../x', extensions: EXTENSIONS }))
+                .toThrow(OptionsError);
+        });
+
+        it('should reject an empty prefix', () => {
+            expect(() => new NamingScheme({ prefix: '', extensions: EXTENSIONS }))
+                .toThrow(OptionsError);
+        });
     });
 
     describe('toName', () => {
@@ -101,10 +147,33 @@ describe('src/naming', () => {
             expect(naming.toName('project.server.conf')).toEqual('project');
         });
 
-        it('should strip a suffix with no adjoining dot', () => {
+        it('should require a segment boundary before a suffix', () => {
             const naming = new NamingScheme({ suffix: 'server', extensions: EXTENSIONS });
 
-            expect(naming.toName('appserver.conf')).toEqual('app');
+            // 'appserver' ends with 'server' as a substring, not as a segment.
+            expect(naming.toName('appserver.conf')).toEqual('');
+        });
+
+        it('should require a segment boundary after a prefix', () => {
+            const naming = new NamingScheme({ prefix: 'project', extensions: EXTENSIONS });
+
+            expect(naming.toName('projectile.conf')).toEqual('');
+        });
+
+        it('should give an off-convention file the root name', () => {
+            const naming = new NamingScheme({ prefix: 'project', extensions: EXTENSIONS });
+
+            // Explicitly loaded files need not follow the discovery convention;
+            // their keys belong at the root, not under a foreign namespace.
+            expect(naming.toName('production.conf')).toEqual('');
+        });
+
+        it('should keep the whole name of an extensionless or dot file', () => {
+            const naming = new NamingScheme({ extensions: EXTENSIONS });
+
+            expect(naming.toName('Makefile')).toEqual('Makefile');
+            expect(naming.toName('.projectrc')).toEqual('.projectrc');
+            expect(naming.toName('/etc/hosts')).toEqual('hosts');
         });
 
         it('should strip both prefix and suffix', () => {

@@ -119,16 +119,23 @@ await store.loadFile([
 store.getSync('server.core'); // → { host: '1.1.1.1', port: 4010 }
 ```
 
-Merge several keys, letting later keys take precedence for scalars:
+Fall back across several keys with `??` — **most specific first**, since a store read returns `undefined` when nothing matched:
 
 ```typescript
-const db = store.getSync(['db', 'server.db', 'server.core.db']);
-// → { host: '127.0.0.1', user: 'admin', password: 'start123', database: 'app' }
+const db = store.getSync('server.core.db')
+    ?? store.getSync('server.db')
+    ?? store.getSync('db');
+```
+
+Ask whether a key was configured at all — which a value alone cannot tell you, because `false` and `null` are legitimate config:
+
+```typescript
+store.has('server.redis');   // → true even when the value is `false`
 ```
 
 ### Sync vs. async (lazy) reads
 
-Reads come in two variants. `getSync` is **synchronous** — it returns whatever is currently loaded. `get` is **asynchronous** and, on an `FSStore`, **lazily loads on the first call**, then reads — the load is **memoized** (runs at most once, is shared across concurrent callers, and is skipped if config was already loaded via `load()`/`loadFile()`). This gives two usage modes:
+Reads come in two variants, and **every store serves both**. `getSync` is **synchronous** — it returns whatever is currently loaded. `get` is **asynchronous** and, on an `FSStore`, **lazily loads on the first call**, then reads — the load is **memoized** (runs at most once, is shared across concurrent callers, and is skipped if config was already loaded via `load()`/`loadFile()`). A load that *fails* is not memoized: the next `get` retries rather than replaying the error. This gives two usage modes:
 
 ```typescript
 // eager: load once, then cheap synchronous reads
@@ -140,13 +147,7 @@ store.getSync('server.core');          // sync
 await store.get('server.core');
 ```
 
-Not every store serves both variants — the unsupported one throws:
-
-| Store                             | `get` (async)      | `getSync` (sync) |
-|-----------------------------------|:------------------:|:----------------:|
-| `Store` (memory)                  | ✗ throws           | ✓                |
-| `FSStore`                         | ✓ (lazy, memoized) | ✓                |
-| custom (`extends AbstractStore`)  | whatever it implements; the other throws              |
+On a plain in-memory `Store` there is nothing to await, so `get` is simply the resolved `getSync`.
 
 ### Fully synchronous usage
 
@@ -159,7 +160,20 @@ store.loadSync();                      // or: store.loadFileSync(['project.conf'
 store.getSync('server.core');          // → { host: '1.1.1.1', port: 4010 }
 ```
 
-Note the asymmetry with reads: **`getSync` never loads for you.** The async `get` lazily loads on its first call, but the sync read stays a pure snapshot of what is loaded, so a synchronous consumer calls `loadSync()`/`loadFileSync()` explicitly first. (A synchronous lazy load would both change `getSync`'s contract and race an in-flight async `load` into adding every element twice.) A sync load still marks the store loaded, so a later `get()` will not re-read the files.
+Note the asymmetry with reads: **`getSync` never loads for you.** The async `get` lazily loads on its first call, but the sync read stays a pure snapshot of what is loaded, so a synchronous consumer calls `loadSync()`/`loadFileSync()` explicitly first — a synchronous lazy load would change `getSync`'s contract. A sync load still marks the store loaded, so a later `get()` will not re-read the files.
+
+### Knowing what was loaded
+
+Every loader returns the **absolute paths it actually loaded**, so "found nothing" is distinguishable from "loaded fine" — the failure a mistyped config directory otherwise hides completely:
+
+```typescript
+const loaded = await store.load(options.directory);
+if (loaded.length === 0) {
+    console.warn(`No configuration found in ${options.directory}.`);
+}
+```
+
+Loading is **idempotent**: an element is keyed by its source file, so loading the same file twice — or the same directory under two names, or an explicit `load()` racing a lazy `get()` — refreshes that element instead of adding a duplicate. Call `reset()` to drop everything and start over. For provenance, `elements()` reports every stored element with the file it came from.
 
 ## 🔍 How It Works
 
@@ -186,7 +200,7 @@ store.get('server.core')
 So the same key is answered jointly by the root file and the file *named* after it — which is what lets one logical config be split across files or layered as overrides.
 
 1. **Discovery** — `load()` builds glob patterns from your `prefix`/`suffix`/`extensions` and locates matching files in each directory (non-recursively).
-2. **Loading** — each file is parsed, and everything that resolves to a plain object is stored as an `Element` — `{ name, data }`. A file's `name` is its base name with the configured `prefix`/`suffix` (and the adjoining `.`) stripped. Non-object contents (e.g. a scalar YAML) are silently skipped.
+2. **Loading** — each file is parsed, and everything that resolves to an object is stored as an `Element` — `{ name, data, source }`. A file's `name` is its base name with the configured `prefix`/`suffix` (and the adjoining `.`) stripped. Contents that are not an object (e.g. a scalar YAML) are skipped — the file simply does not appear in the loader's return value.
 3. **Lookup** — `get(key)` walks every stored element, matches the key against each element's `name`, resolves the remaining path within `data`, and merges all matches into one result.
 
 ## 🗂️ File Discovery
@@ -212,6 +226,19 @@ The naming scheme builds glob patterns from your options. The single `*` matches
 
 An element with an empty name is looked up at the root, so its keys are addressable directly.
 
+Matching is **segment-aware in both directions**. A key only matches an element name at a `.` boundary — element `server` answers `server.port` but never `serverless.port` — and an element named *below* the requested key contributes nested under the segments the key did not consume:
+
+```text
+Element { name: 'server.core', data: { host: '1.1.1.1' } }
+
+store.getSync('server')            // → { core: { host: '1.1.1.1' } }
+store.getSync('server.core.host')  // → '1.1.1.1'
+```
+
+So splitting `project.server.core.conf` out of `project.server.conf` does not hide it from `get('server')`; the more specific file wins where they overlap.
+
+**Off-convention files.** `toName` derives a namespace only from a file that actually follows the scheme. With `prefix: 'project'`, `loadFile('production.conf')` yields the **root** name — its keys land at the top level, where naming a file explicitly implies you want them — rather than being filed under a `production` namespace nothing will ever query.
+
 ## ⚙️ Configuration
 
 Pass `FSStoreOptions` to the `FSStore` constructor. Every field is optional:
@@ -235,15 +262,33 @@ const store = new FSStore(options);
 | `cwd`        | `string`                                          | `process.cwd()`                                                         | Base directory for resolving relative directories and file paths.                             |
 | `prefix`     | `string`                                          | —                                                                       | File-name prefix (e.g. `project`); stripped when deriving an element's `name`.                |
 | `suffix`     | `string`                                          | —                                                                       | File-name suffix; stripped when deriving an element's `name`.                                 |
-| `extensions` | `string[]`                                         | `conf`, `js`, `mjs`, `cjs`, `ts`, `mts`, `yml`, `yaml`                  | Extensions to discover. A leading `.` is stripped automatically.                              |
-| `mergeFn`    | `(target, source) => Record<string, any>`         | [`smob`](https://github.com/tada5hi/smob) merger (arrays replaced, immutable) | Strategy used to deep-merge two objects during `get`.                                   |
+| `extensions` | `string[]`                                         | `DEFAULT_EXTENSIONS`                                                    | Extensions to discover. A leading `.` is stripped automatically. Omit for the defaults — an **empty array throws** rather than silently restoring them. |
+| `mergeFn`    | `(target, source) => Record<string, unknown>`      | [`smob`](https://github.com/tada5hi/smob) merger (arrays replaced, immutable) | Strategy used to deep-merge two objects during a read. **Must be pure** — see [Merge Semantics](#-merge-semantics). |
 | `naming`     | `INamingScheme`                                    | `NamingScheme` from `prefix`/`suffix`/`extensions`                      | Custom naming implementation (overrides `prefix`/`suffix`/`extensions`).                       |
 | `read`       | `(filePath: string) => Promise<unknown>`          | [`locter`](https://github.com/tada5hi/locter)'s `read`                  | Custom asynchronous reader/parser used by `load`/`loadFile`.                                   |
 | `readSync`   | `(filePath: string) => unknown`                   | [`locter`](https://github.com/tada5hi/locter)'s `readSync`              | Custom synchronous reader/parser used by `loadSync`/`loadFileSync`.                            |
+| `onError`    | `'throw' \| 'skip'`                                | `'throw'`                                                               | What to do when a file cannot be read or parsed. `'throw'` raises a `LoadError` naming the file; `'skip'` keeps the files that did parse. |
+
+**Options are validated at construction.** A `prefix`/`suffix` must be a literal file-name segment — anything containing a path separator, `..`, or glob syntax (`* ? { } , [ ] ! ( )`) throws an `OptionsError` instead of quietly widening discovery or escaping `cwd`. An empty `extensions` array throws for the same reason.
+
+### Choosing which formats to discover
+
+The default extension list includes formats that are **executed** to produce config (`js`, `mjs`, `cjs`, `ts`, `mts`) — discovering one imports it. That is the same trust model as every config loader, and it is what makes a `project.config.ts` possible; but when the search directory is not fully trusted, restrict discovery to data formats:
+
+```typescript
+import { FSStore, DATA_EXTENSIONS } from 'confinity';
+
+const store = new FSStore({
+    prefix: 'project',
+    extensions: [...DATA_EXTENSIONS],   // conf, json, yml, yaml
+});
+```
+
+`DATA_EXTENSIONS`, `MODULE_EXTENSIONS` and `DEFAULT_EXTENSIONS` (the two concatenated) are exported for exactly this.
 
 ## 📚 API
 
-The primary entry point is the `FSStore` class; the `Store` base, the `AbstractStore` base, the read-only `Container` view, the `NamingScheme`, and their contracts are exported too. Reads come in two variants: a synchronous `getSync` and an asynchronous `get` (which an `FSStore` uses to lazily load) — a store serves the variant(s) it implements and **throws** for the others (see the capability matrix under [Quick Start](#-quick-start)).
+The primary entry point is the `FSStore` class; the `Store` base, the read-only `Container` view, the `NamingScheme`, the error classes, and their contracts are exported too. Reads come in two variants — a synchronous `getSync` and an asynchronous `get` (which an `FSStore` uses to lazily load) — and **both always work**.
 
 ### `FSStore` (extends `Store`)
 
@@ -255,51 +300,67 @@ new FSStore(options?: FSStoreOptions)
 
 | Member     | Signature                                             | Description                                                                                     |
 |------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
-| `load`     | `load(input?: string \| string[]): Promise<void>`    | Discovers config files in one or many directories (defaults to `cwd`), then loads each.         |
-| `loadFile` | `loadFile(input: string \| string[]): Promise<void>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                      |
-| `loadSync` | `loadSync(input?: string \| string[]): void`         | Synchronous twin of `load` — same discovery, parsed via `readSync`.                             |
-| `loadFileSync` | `loadFileSync(input: string \| string[]): void`  | Synchronous twin of `loadFile` — parses sequentially rather than in parallel.                    |
-| `add`      | `add(element: Element): void`                        | *(from `Store`)* Adds a named element to the store.                                              |
-| `getSync`  | `getSync<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. Reads only what is currently loaded — it never loads for you. |
-| `get`      | `get<T = any>(key: string \| string[]): Promise<T \| undefined>` | Like `getSync`, but async — lazily loads from the filesystem on the first call (memoized), then resolves. |
+| `load`     | `load(input?: string \| string[]): Promise<string[]>` | Discovers config files in one or many directories (defaults to `cwd`; `[]` means none), loads each, and returns the paths loaded. |
+| `loadFile` | `loadFile(input: string \| string[]): Promise<string[]>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                   |
+| `loadSync` | `loadSync(input?: string \| string[]): string[]`      | Synchronous twin of `load` — same discovery, parsed via `readSync`.                             |
+| `loadFileSync` | `loadFileSync(input: string \| string[]): string[]` | Synchronous twin of `loadFile` — parses sequentially rather than in parallel.                 |
+| `get`      | `get<T = unknown>(key: string): Promise<T \| undefined>` | Like `getSync`, but async — lazily loads from the filesystem on the first call (memoized), then resolves. |
+| `reset`    | `reset(): void`                                       | Drops every element **and** the loaded marker, so the next load reads the filesystem again.     |
+| `add`      | `add(element: Element): void`                        | *(from `Store`)* Adds a named element. Rejects a malformed element with an `ElementError`.       |
+| `getSync`  | `getSync<T = unknown>(key: string): T \| undefined`   | *(from `Store`)* Resolves a dotted key across elements, merged. Reads only what is currently loaded — it never loads for you. |
+| `has`      | `has(key: string): boolean`                          | *(from `Store`)* Whether any element contributes a value — `true` even when that value is `false`/`null`. |
+| `elements` | `elements(): readonly Element[]`                     | *(from `Store`)* Every stored element with its `source` file, for provenance and diagnostics.    |
 
 ### `Store`
 
-The pure, in-memory half (`add` + `getSync`, no filesystem) that `FSStore` extends — construct it directly if you want to feed elements in by hand. It is **synchronous only**: an in-memory lookup has no reason to be async, so `get` throws (inherited from `AbstractStore`).
+The pure, in-memory half (no filesystem) that `FSStore` extends — construct it directly to feed elements in by hand. Its `get` has nothing to await, so it is simply the resolved `getSync`.
 
 ```typescript
 new Store(options?: StoreOptions)   // { mergeFn? }
 ```
 
-### `AbstractStore`
-
-The abstract base that every store extends — it implements `IStore` with both `get` and `getSync` **throwing "unsupported" by default**. A concrete store overrides only the variant(s) it can serve, so a sync-only or async-only store is trivial (implement one; the other throws automatically). `Store` overrides `getSync`; `FSStore` additionally overrides `get`.
-
 ### `Container`
 
-A **read-only view over a single store**. Wrap a store (e.g. an `FSStore` you have already loaded) to hand consumers dotted-path lookups without exposing the loading or mutation surface — `load`/`loadFile`/`add` stay on the store.
+A **read-only view over a single store**. Wrap a store (e.g. an `FSStore` you have already loaded) to hand consumers dotted-path lookups without exposing the loading or mutation surface — `load`/`loadFile`/`add`/`reset` stay on the store. The wrapped store is held in a private field, and the parameter is typed as only the read methods, so it cannot be reached back through the view.
 
 ```typescript
-new Container(store: IStore)
+new Container(store: ReadableStore)   // Pick<IStore, 'get' | 'getSync' | 'has'>
 ```
 
 | Member     | Signature                                               | Description                                          |
 |------------|---------------------------------------------------------|------------------------------------------------------|
-| `getSync`  | `getSync<T = any>(key: string \| string[]): T \| undefined` | Delegates to the wrapped store's `getSync`. No mutation. |
-| `get`      | `get<T = any>(key: string \| string[]): Promise<T \| undefined>` | Delegates to the wrapped store's `get`; propagates its throw if that variant is unsupported. |
+| `getSync`  | `getSync<T = unknown>(key: string): T \| undefined`     | Delegates to the wrapped store's `getSync`.          |
+| `get`      | `get<T = unknown>(key: string): Promise<T \| undefined>` | Delegates to the wrapped store's `get`.             |
+| `has`      | `has(key: string): boolean`                             | Delegates to the wrapped store's `has`.              |
+
+### Errors
+
+Everything confinity throws extends `ConfinityError`, so one `instanceof` catches the lot.
+
+| Error            | Thrown when                                                                     |
+|------------------|---------------------------------------------------------------------------------|
+| `OptionsError`   | A constructor option is unusable — an empty `extensions` list, a `prefix`/`suffix` that is not a literal file-name segment. |
+| `ElementError`   | `add()` received a malformed element (non-string `name`, non-object `data`).     |
+| `LoadError`      | A file could not be read or parsed. Carries the offending `path` and the underlying error as `cause`. |
 
 ### Types
 
 ```typescript
 type Element = {
-    name: string;               // derived from the file name (prefix/suffix stripped)
-    data: Record<string, any>;  // parsed file contents
+    name: string;                   // derived from the file name (prefix/suffix stripped)
+    data: Record<string, unknown>;  // parsed file contents
+    source?: string;                // absolute path it was parsed from
 };
 
-type MergeFn = (target: Record<string, any>, source: Record<string, any>) => Record<string, any>;
+type MergeFn = (
+    target: Record<string, unknown>,
+    source: Record<string, unknown>
+) => Record<string, unknown>;
 
 type Reader = (filePath: string) => Promise<unknown>;      // used by load / loadFile
 type ReaderSync = (filePath: string) => unknown;           // used by loadSync / loadFileSync
+
+type LoadErrorMode = 'throw' | 'skip';
 
 type StoreOptions = {
     mergeFn?: MergeFn;
@@ -313,6 +374,7 @@ type FSStoreOptions = StoreOptions & {
     naming?: INamingScheme;
     read?: Reader;
     readSync?: ReaderSync;
+    onError?: LoadErrorMode;
 };
 
 // Contracts (interfaces, class-implemented)
@@ -323,10 +385,18 @@ interface INamingScheme {
 
 interface IStore {
     add(element: Element): void;
-    get<T = any>(key: string | string[]): Promise<T | undefined>;      // async (default)
-    getSync<T = any>(key: string | string[]): T | undefined;           // sync
+    get<T = unknown>(key: string): Promise<T | undefined>;   // async
+    getSync<T = unknown>(key: string): T | undefined;        // sync
+    has(key: string): boolean;
+    elements(): readonly Element[];
+    reset(): void;
 }
+
+// What a Container needs, and all it is given.
+type ReadableStore = Pick<IStore, 'get' | 'getSync' | 'has'>;
 ```
+
+> **`T` is not checked.** Both reads default to `T = unknown`, and a type argument is an *assertion* about a value parsed off disk moments earlier — nothing validates it. Narrow the result yourself (or run it through a schema validator) rather than trusting the annotation.
 
 ## 🧩 Extending
 
@@ -352,7 +422,7 @@ const store = new FSStore({ naming, read, readSync });
 
 Supply only the port you use: `read` covers `load`/`loadFile`, `readSync` covers `loadSync`/`loadFileSync`, and each falls back to its `locter` default independently.
 
-Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`. To write a store from scratch, extend `AbstractStore` and override only the read variant(s) you can serve (`get`, `getSync`, or both); the unimplemented one throws automatically, so a sync-only or async-only store needs no boilerplate.
+Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`. To write a store from scratch, implement `IStore` directly; the interface promises only what every store can actually deliver, so there is no unimplemented variant waiting to throw at runtime.
 
 ## 🔀 Merge Semantics
 
@@ -362,7 +432,11 @@ When two matches combine, `Store.merge(primary, secondary)` decides *whether* to
 - **Scalar `primary`** → wins over `secondary`.
 - **`undefined` `primary`** → yields the existing accumulator.
 
-Because accumulated results are passed as `secondary`, the more-recently-resolved value survives for non-object values — so for `get([...keys])`, later keys take precedence for scalars.
+**Order.** Elements are sorted by `name` in code-unit order — deliberately not `localeCompare`, so precedence can never depend on the ambient locale. The sort is stable, so two elements with the same name keep load order. Because the accumulated result is passed as `secondary`, the **later** element wins for non-object values; two elements that both match therefore resolve "more specific last, and it wins".
+
+**Nothing internal escapes.** Every value leaving the store is copied on its way out, so a caller mutating a result cannot corrupt loaded config, and repeated reads of the same key always return the same answer. Plain objects and arrays are copied structurally (cycles included); functions, `Date`s and class instances — which a `.ts`/`.mjs` config may legitimately export — pass through by reference.
+
+> ⚠️ **A custom `mergeFn` must be pure.** It receives a defensive copy as `target`, but a merger that writes into `source`, or returns one of its arguments by reference, puts the aliasing back and makes repeated reads drift.
 
 ## 🔁 Migrating from v1
 
@@ -387,15 +461,21 @@ const core = store.getSync('server.core');        // synchronous read is now get
 | v1                                  | v2                                                                     |
 |-------------------------------------|------------------------------------------------------------------------|
 | `new Container(options)`            | `new FSStore(options)` — same `cwd`/`prefix`/`suffix`/`extensions`/`mergeFn` fields |
-| `container.load()` / `.loadFile()`  | unchanged on `FSStore`, plus new `loadSync()` / `loadFileSync()`       |
+| `container.load()` / `.loadFile()`  | unchanged on `FSStore` (now returning the paths loaded), plus new `loadSync()` / `loadFileSync()` |
 | `container.get(key)` *(sync)*       | `store.getSync(key)` *(sync)* — or `await store.get(key)`, which lazily loads |
+| `container.get([a, b, c])`          | removed — fall back explicitly with `getSync(a) ?? getSync(b) ?? getSync(c)` |
 | `new Container(...)` as the read API | `new Container(store)` — read-only view; construct it **from** a store |
 | type `Options`                      | type `FSStoreOptions`                                                  |
 | type `NormalizedOptions`            | removed (internal)                                                     |
 
-> ⚠️ **The `get` rename is silent, not a compile error.** In v1 `get` returned the value; in v2 it returns a `Promise`. Existing code like `const v = container.get('x')` keeps compiling against `any`-typed results and starts yielding a pending Promise instead of your config. Search for `.get(` and decide per call site: `getSync` for the eager path, `await get` for the lazy one.
+> ⚠️ **`get` kept its name but changed meaning, and the compiler will not always catch it.** In v1 `get` returned the value; in v2 it returns a `Promise`. Where the result flows into a typed slot (`const raw: ConfigInput = container.get('x')`) `tsc` now reports it, because both reads default to `T = unknown`. Where it flows into an `unknown` or `any` parameter — `normalize(container.get('x'))` — **nothing is reported**, and the function receives a Promise that most object guards happily accept, yielding an empty config and a service quietly running on defaults. Audit every `.get(` call site by hand: `getSync` for the eager path, `await get` for the lazy one.
 
-New in v2 and worth knowing about: `Store` (a pure in-memory store you feed by hand), `AbstractStore` (the base for custom stores), `NamingScheme` plus the injectable `naming` / `read` / `readSync` seams, and the synchronous loaders.
+Two more v2 changes worth a search of your own code:
+
+- **Array keys are gone.** `get(['db', 'server.db'])` used to *merge* every candidate into a per-leaf blend — a result that existed in no config file. Replace it with a `??` chain, most specific first, which also lets you state the direction the array form could not express.
+- **Matching now requires a `.` boundary, in both directions.** An element named `red` no longer answers `redis`, an off-convention `loadFile('production.conf')` now lands at the root instead of under `production`, and an element named `server.core` now *does* contribute to `get('server')`.
+
+New in v2 and worth knowing about: `Store` (a pure in-memory store you feed by hand), `NamingScheme` plus the injectable `naming` / `read` / `readSync` seams, the synchronous loaders, `has()` / `elements()` / `reset()`, the `ConfinityError` family, and construction-time validation of `prefix` / `suffix` / `extensions`.
 
 ## ✅ Requirements
 

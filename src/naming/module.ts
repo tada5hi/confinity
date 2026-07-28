@@ -5,13 +5,39 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { OptionsError } from '../errors';
 import type { INamingScheme, NamingOptions } from './types';
 
 /**
- * Default {@see Naming} implementation. Owns both directions of the
+ * Characters that would give a prefix/suffix meaning beyond "literal file name
+ * segment" once interpolated into a glob pattern — `*`/`?` widen the match,
+ * `{},[]!()` change its grammar, and a path separator escapes the search
+ * directory entirely.
+ */
+const UNSAFE_PATTERN_CHARS = /[\\/*?{}[\],!()]/;
+
+function assertPatternLiteral(value: string, option: string) : void {
+    if (value.length === 0) {
+        throw new OptionsError(`The option "${option}" must not be empty — omit it instead.`);
+    }
+
+    if (UNSAFE_PATTERN_CHARS.test(value) || value.includes('..')) {
+        throw new OptionsError(
+            `The option "${option}" must be a literal file name segment, but received "${value}".`,
+        );
+    }
+}
+
+/**
+ * Default {@see INamingScheme} implementation. Owns both directions of the
  * prefix/suffix/extensions convention: building the glob patterns that discover
  * files (convention → patterns) and deriving an element name from a file path
  * (path → name).
+ *
+ * Both directions agree on what "follows the convention" means: a file whose
+ * name does not match the configured prefix/suffix derives the **root** name
+ * (`''`) rather than a truncated one, so an explicitly loaded off-convention
+ * file lands where a caller naming a file directly expects it — at the root.
  */
 export class NamingScheme implements INamingScheme {
     protected readonly prefix : string | undefined;
@@ -21,6 +47,22 @@ export class NamingScheme implements INamingScheme {
     protected readonly extensions : string[];
 
     constructor(options: NamingOptions) {
+        if (typeof options.prefix !== 'undefined') {
+            assertPatternLiteral(options.prefix, 'prefix');
+        }
+
+        if (typeof options.suffix !== 'undefined') {
+            assertPatternLiteral(options.suffix, 'suffix');
+        }
+
+        if (options.extensions.length === 0) {
+            throw new OptionsError('The option "extensions" must not be empty.');
+        }
+
+        for (const extension of options.extensions) {
+            assertPatternLiteral(extension, 'extensions');
+        }
+
         this.prefix = options.prefix;
         this.suffix = options.suffix;
         this.extensions = options.extensions;
@@ -28,7 +70,12 @@ export class NamingScheme implements INamingScheme {
 
     toPatterns() : string[] {
         const patterns : string[] = [];
-        const extension = `{${this.extensions.join(',')}}`;
+
+        // A single-alternative brace group (`{conf}`) is matched literally by the
+        // glob engine, so a one-element list must not be braced at all.
+        const extension = this.extensions.length === 1 ?
+            this.extensions[0] as string :
+            `{${this.extensions.join(',')}}`;
 
         if (
             this.prefix &&
@@ -53,37 +100,47 @@ export class NamingScheme implements INamingScheme {
     }
 
     toName(filePath: string) : string {
-        let inputNormalized = filePath.replace(/\\/g, '/');
-        if (inputNormalized.includes('/')) {
-            inputNormalized = inputNormalized.substring(inputNormalized.lastIndexOf('/') + 1);
+        let name = this.toStem(filePath);
+
+        if (this.prefix) {
+            if (name === this.prefix) {
+                name = '';
+            } else if (name.startsWith(`${this.prefix}.`)) {
+                name = name.substring(this.prefix.length + 1);
+            } else {
+                // Off-convention: the caller named this file explicitly, so its
+                // keys belong at the root rather than under a namespace derived
+                // from an unrelated file name.
+                return '';
+            }
         }
 
-        let name = inputNormalized.substring(0, inputNormalized.lastIndexOf('.'));
-
-        if (
-            this.prefix &&
-            name.startsWith(this.prefix)
-        ) {
-            let startIndex = this.prefix.length;
-            if (name.charAt(startIndex) === '.') {
-                startIndex++;
+        if (this.suffix) {
+            if (name === this.suffix) {
+                name = '';
+            } else if (name.endsWith(`.${this.suffix}`)) {
+                name = name.substring(0, name.length - (this.suffix.length + 1));
+            } else {
+                return '';
             }
-
-            name = name.substring(startIndex);
-        }
-
-        if (
-            this.suffix &&
-            name.endsWith(this.suffix)
-        ) {
-            let startIndex = name.length - this.suffix.length;
-            if (name.charAt(startIndex - 1) === '.') {
-                startIndex--;
-            }
-
-            name = name.substring(0, startIndex);
         }
 
         return name;
+    }
+
+    /**
+     * Base name with the extension removed. A leading dot is never treated as an
+     * extension separator, so a dotfile (`.projectrc`) and an extensionless file
+     * (`Makefile`) keep their whole name instead of collapsing to `''`.
+     */
+    protected toStem(filePath: string) : string {
+        let value = filePath.replace(/\\/g, '/');
+        if (value.includes('/')) {
+            value = value.substring(value.lastIndexOf('/') + 1);
+        }
+
+        const index = value.lastIndexOf('.');
+
+        return index > 0 ? value.substring(0, index) : value;
     }
 }

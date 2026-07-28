@@ -5,8 +5,9 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
+import { createMerger } from 'smob';
 import { describe, expect, it } from 'vitest';
-import { AbstractStore, Store } from '../../src';
+import { ElementError, Store } from '../../src';
 
 describe('src/store', () => {
     it('should return whole data on exact-name match', () => {
@@ -24,12 +25,14 @@ describe('src/store', () => {
         expect(store.getSync<string>('server.core.host')).toEqual('1.1.1.1');
     });
 
-    it('should resolve a prefix match without a dot boundary', () => {
+    it('should require a segment boundary to match an element name', () => {
         const store = new Store();
         store.add({ name: 'ba', data: { r: { x: 1 } } });
+        store.add({ name: 'server', data: { less: { port: 1 } } });
 
-        // 'bar' starts with 'ba', remainder ('r') has no leading dot.
-        expect(store.getSync('bar')).toEqual({ x: 1 });
+        // 'ba' is a string prefix of 'bar', but not a path-segment prefix.
+        expect(store.getSync('bar')).toBeUndefined();
+        expect(store.getSync('serverless.port')).toBeUndefined();
     });
 
     it('should skip non-matching elements', () => {
@@ -55,11 +58,11 @@ describe('src/store', () => {
         expect(store.getSync<string>('app.key')).toEqual('value');
     });
 
-    it('should merge every empty-name element for an empty key', () => {
+    it('should merge every element for an empty key', () => {
         const store = new Store();
         store.add({ name: 'named', data: { a: 1 } });
 
-        // key.length === 0 → the whole element data is taken.
+        // key.length === 0 → the whole element data is taken, namespace ignored.
         expect(store.getSync('')).toEqual({ a: 1 });
     });
 
@@ -83,21 +86,6 @@ describe('src/store', () => {
             user: 'admin',
             database: 'app',
         });
-    });
-
-    it('should let later keys win for scalars in a multi-key get', () => {
-        const store = new Store();
-        store.add({ name: 'x', data: { val: 1 } });
-        store.add({ name: 'y', data: { val: 2 } });
-
-        expect(store.getSync(['x.val', 'y.val'])).toBe(2);
-    });
-
-    it('should keep the accumulator when a later key is undefined', () => {
-        const store = new Store();
-        store.add({ name: 'x', data: { val: 1 } });
-
-        expect(store.getSync(['x.val', 'nonexistent'])).toBe(1);
     });
 
     it('should use the injected merge function for object matches', () => {
@@ -132,33 +120,160 @@ describe('src/store', () => {
         expect(first.getSync('client')).toEqual(second.getSync('client'));
     });
 
-    it('should throw from the async get() — an in-memory store is synchronous', async () => {
+    it('should resolve the async get without loading', async () => {
         const store = new Store();
+        store.add({ name: 'server', data: { core: { port: 4010 } } });
 
-        await expect(store.get('server')).rejects.toThrow(/asynchronous/);
-    });
-});
-
-class AsyncOnlyStore extends AbstractStore {
-    add() : void {
-        // no-op: this fixture only serves the async variant
-    }
-
-    override async get<T = any>() : Promise<T | undefined> {
-        return 'async-value' as T;
-    }
-}
-
-describe('src/store AbstractStore', () => {
-    it('should throw from an unimplemented synchronous getSync()', () => {
-        const store = new AsyncOnlyStore();
-
-        expect(() => store.getSync('server')).toThrow(/synchronous/);
+        await expect(store.get('server.core')).resolves.toEqual({ port: 4010 });
     });
 
-    it('should serve the variant a store does implement', async () => {
-        const store = new AsyncOnlyStore();
+    describe('nested elements', () => {
+        it('should aggregate a child-named element under a parent key', () => {
+            const store = new Store();
+            store.add({ name: 'server.core', data: { host: '1.1.1.1' } });
 
-        await expect(store.get('server')).resolves.toEqual('async-value');
+            expect(store.getSync('server')).toEqual({ core: { host: '1.1.1.1' } });
+            expect(store.getSync('server.core.host')).toEqual('1.1.1.1');
+        });
+
+        it('should nest through several name segments', () => {
+            const store = new Store();
+            store.add({ name: 'a.b.c', data: { v: 1 } });
+
+            expect(store.getSync('a')).toEqual({ b: { c: { v: 1 } } });
+        });
+
+        it('should let the more specific element win over the broader one', () => {
+            const store = new Store();
+            store.add({ name: 'server', data: { core: { host: 'from-broad', port: 4010 } } });
+            store.add({ name: 'server.core', data: { host: 'from-specific' } });
+
+            expect(store.getSync('server')).toEqual({ core: { host: 'from-specific', port: 4010 } });
+        });
+
+        it('should require a segment boundary to aggregate', () => {
+            const store = new Store();
+            store.add({ name: 'serverless', data: { v: 1 } });
+
+            expect(store.getSync('server')).toBeUndefined();
+        });
+    });
+
+    describe('isolation', () => {
+        it('should not write into stored data while merging', () => {
+            const first = { name: 'server', data: { core: { db: { host: 'a' } } } };
+            const second = { name: 'server', data: { core: { db: { port: 1 } } } };
+
+            const store = new Store();
+            store.add(first);
+            store.add(second);
+
+            expect(store.getSync('server')).toEqual({ core: { db: { port: 1, host: 'a' } } });
+            expect(second.data).toEqual({ core: { db: { port: 1 } } });
+            expect(first.data).toEqual({ core: { db: { host: 'a' } } });
+        });
+
+        it('should not hand out a reference into a single matching element', () => {
+            const element = { name: 'x', data: { a: { b: 1 } } };
+
+            const store = new Store();
+            store.add(element);
+
+            const value = store.getSync<Record<string, any>>('x');
+            expect(value).toBeDefined();
+            value!.injected = true;
+            value!.a.b = 99;
+
+            expect(element.data).toEqual({ a: { b: 1 } });
+        });
+
+        it('should stay stable across repeated reads with an accumulating merger', () => {
+            const store = new Store({ mergeFn: createMerger({ array: true, inPlace: false }) as any });
+            store.add({ name: 'n', data: { hosts: ['a'] } });
+            store.add({ name: 'n', data: { hosts: ['b'] } });
+
+            const first = store.getSync('n');
+
+            expect(store.getSync('n')).toEqual(first);
+            expect(store.getSync('n')).toEqual(first);
+        });
+
+        it('should carry exotic values through by reference', () => {
+            const date = new Date(0);
+            const fn = () => 1;
+
+            const store = new Store();
+            store.add({ name: 'x', data: { date, fn } });
+
+            const value = store.getSync<Record<string, unknown>>('x');
+
+            expect(value?.date).toBe(date);
+            expect(value?.fn).toBe(fn);
+        });
+
+        it('should detach the elements() view from the store', () => {
+            const store = new Store();
+            store.add({
+                name: 'x', 
+                data: { a: 1 }, 
+                source: '/tmp/x.conf', 
+            });
+
+            const [element] = store.elements();
+            expect(element).toBeDefined();
+            (element!.data as Record<string, unknown>).a = 99;
+
+            expect(store.getSync('x')).toEqual({ a: 1 });
+            expect(element!.source).toEqual('/tmp/x.conf');
+        });
+    });
+
+    describe('has', () => {
+        it('should distinguish a falsy configured value from an absent one', () => {
+            const store = new Store();
+            store.add({ name: 'server', data: { redis: false, smtp: null } });
+
+            expect(store.has('server.redis')).toBe(true);
+            expect(store.has('server.smtp')).toBe(true);
+            expect(store.has('server.absent')).toBe(false);
+
+            expect(store.getSync('server.redis')).toBe(false);
+        });
+
+        it('should report false on an empty store', () => {
+            expect(new Store().has('anything')).toBe(false);
+        });
+    });
+
+    describe('add validation', () => {
+        it('should reject a non-string name', () => {
+            const store = new Store();
+
+            expect(() => store.add({ name: 42 as any, data: {} })).toThrow(ElementError);
+        });
+
+        it('should reject non-object data', () => {
+            const store = new Store();
+
+            expect(() => store.add({ name: 'x', data: 'nope' as any })).toThrow(ElementError);
+        });
+
+        it('should reject a non-object element', () => {
+            const store = new Store();
+
+            expect(() => store.add(null as any)).toThrow(ElementError);
+        });
+    });
+
+    describe('reset', () => {
+        it('should drop every element', () => {
+            const store = new Store();
+            store.add({ name: 'server', data: { core: { port: 4010 } } });
+
+            store.reset();
+
+            expect(store.getSync('server')).toBeUndefined();
+            expect(store.elements()).toHaveLength(0);
+        });
     });
 });

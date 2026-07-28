@@ -31,6 +31,7 @@
 - **Types**: PascalCase. Option/config shapes are `type` aliases (`StoreOptions`, `NamingOptions`, `FSStoreOptions`).
 - **Booleans**: prefixed (`itemsSorted`).
 - **Methods**: verb-first (`load`, `loadFile`, `findFiles`, `toName`, `toPatterns`, `merge`, `get`).
+- **Errors**: `<Subject>Error`, all extending `ConfinityError`, one class per file under `src/errors/` (`max-classes-per-file`).
 
 ### `interface` vs `type`
 
@@ -42,9 +43,10 @@
   | `INamingScheme`      | `NamingScheme`                 | `src/naming/`   |
   | `IStore`             | `Store` (and `FSStore`)        | `src/store/`    |
 
+
   These interfaces are what callers inject through `FSStoreOptions` (`naming?: INamingScheme`), so the concrete class can be swapped.
 
-- `IStore` additionally has a shared **abstract base**, `AbstractStore` (`src/store/base.ts`), whose read methods (`get`/`getSync`) **throw "unsupported" by default** — `Store`/`FSStore` extend it and override only the variant(s) they serve. The `I<ClassName>` rule still holds (`IStore` ↔ `Store`/`FSStore`); `AbstractStore` is the throwing base beneath them, not a separate contract.
+- An interface must promise only what every implementation can actually deliver. `IStore` used to sit on an `AbstractStore` base whose read methods threw "unsupported" by default; that was removed, because a capability difference expressed as a runtime throw is invisible to the compiler and misleads every caller. Where a consumer needs less than the full contract, narrow with `Pick` (`ReadableStore = Pick<IStore, 'get' | 'getSync' | 'has'>`) rather than adding a variant that throws.
 
 ## File Organization
 
@@ -97,5 +99,8 @@ The commit `type` drives the next release version — release-please reads the h
 ## Best Practices
 
 - Prefer configuring or extending the delegated dependencies (`locter`, `pathtrace`, `smob`) over adding file-parsing, path, or merge logic directly to `Store`/`FSStore` — see [architecture.md](architecture.md).
+- **Validate at construction; report at load.** Anything decidable from the options alone throws an `OptionsError` in the constructor rather than surfacing as an empty read later. Anything only knowable from the filesystem is returned to the caller (the loaders return the paths they loaded) rather than guessed at — only the caller knows whether "no config found" is an error in its context.
+- **Never let an internal reference escape.** Values leaving the store are copied; the guarantee is what makes repeated reads stable and a read-only `Container` actually read-only. A new code path that returns stored data must go through `Store.copy`.
+- **Prefer removing API to adding a flag.** Several audit findings were closed by deleting something (`AbstractStore`, array keys) rather than adding an option. A new option needs to justify itself against the alternative of the caller writing one obvious line.
 - Study surrounding patterns and the existing `Store`/`FSStore`/`NamingScheme` methods before adding new behavior; keep each module focused.
 - Keep changes covered by fixture-driven tests in `test/` and consistent with the conventions above.
