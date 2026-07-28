@@ -41,6 +41,7 @@
 - [API](#-api)
 - [Extending](#-extending)
 - [Merge Semantics](#-merge-semantics)
+- [Migrating from v1](#-migrating-from-v1)
 - [Requirements](#-requirements)
 - [License](#-license)
 
@@ -147,6 +148,19 @@ Not every store serves both variants — the unsupported one throws:
 | `FSStore`                         | ✓ (lazy, memoized) | ✓                |
 | custom (`extends AbstractStore`)  | whatever it implements; the other throws              |
 
+### Fully synchronous usage
+
+Loading has the same duality: `load`/`loadFile` have synchronous twins, `loadSync`/`loadFileSync`. They accept the same input and do the same work, parsing through a separate synchronous port (`readSync`, default [`locter`](https://github.com/tada5hi/locter)'s `readSync`):
+
+```typescript
+const store = new FSStore({ prefix: 'project', cwd: 'config' });
+
+store.loadSync();                      // or: store.loadFileSync(['project.conf'])
+store.getSync('server.core');          // → { host: '1.1.1.1', port: 4010 }
+```
+
+Note the asymmetry with reads: **`getSync` never loads for you.** The async `get` lazily loads on its first call, but the sync read stays a pure snapshot of what is loaded, so a synchronous consumer calls `loadSync()`/`loadFileSync()` explicitly first. (A synchronous lazy load would both change `getSync`'s contract and race an in-flight async `load` into adding every element twice.) A sync load still marks the store loaded, so a later `get()` will not re-read the files.
+
 ## 🔍 How It Works
 
 An **`FSStore`** implements a **load → store → merge → get** pipeline. Its friendly constructor builds a **naming scheme** from your `prefix`/`suffix`/`extensions`; `load`/`loadFile` discover and parse files; `get` serves merged values. The pure, in-memory query/merge engine lives on `Store` — the base `FSStore` extends. Discovery, parsing, path resolution, and merging are delegated to the three runtime dependencies — Confinity owns only orchestration, name derivation, and merge precedence.
@@ -224,7 +238,8 @@ const store = new FSStore(options);
 | `extensions` | `string[]`                                         | `conf`, `js`, `mjs`, `cjs`, `ts`, `mts`, `yml`, `yaml`                  | Extensions to discover. A leading `.` is stripped automatically.                              |
 | `mergeFn`    | `(target, source) => Record<string, any>`         | [`smob`](https://github.com/tada5hi/smob) merger (arrays replaced, immutable) | Strategy used to deep-merge two objects during `get`.                                   |
 | `naming`     | `INamingScheme`                                    | `NamingScheme` from `prefix`/`suffix`/`extensions`                      | Custom naming implementation (overrides `prefix`/`suffix`/`extensions`).                       |
-| `read`       | `(filePath: string) => Promise<unknown>`          | [`locter`](https://github.com/tada5hi/locter)'s `read`                  | Custom reader/parser used to turn a file path into a value.                                    |
+| `read`       | `(filePath: string) => Promise<unknown>`          | [`locter`](https://github.com/tada5hi/locter)'s `read`                  | Custom asynchronous reader/parser used by `load`/`loadFile`.                                   |
+| `readSync`   | `(filePath: string) => unknown`                   | [`locter`](https://github.com/tada5hi/locter)'s `readSync`              | Custom synchronous reader/parser used by `loadSync`/`loadFileSync`.                            |
 
 ## 📚 API
 
@@ -242,8 +257,10 @@ new FSStore(options?: FSStoreOptions)
 |------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
 | `load`     | `load(input?: string \| string[]): Promise<void>`    | Discovers config files in one or many directories (defaults to `cwd`), then loads each.         |
 | `loadFile` | `loadFile(input: string \| string[]): Promise<void>` | Loads a single file (or array, in parallel) directly, deriving its `name`.                      |
+| `loadSync` | `loadSync(input?: string \| string[]): void`         | Synchronous twin of `load` — same discovery, parsed via `readSync`.                             |
+| `loadFileSync` | `loadFileSync(input: string \| string[]): void`  | Synchronous twin of `loadFile` — parses sequentially rather than in parallel.                    |
 | `add`      | `add(element: Element): void`                        | *(from `Store`)* Adds a named element to the store.                                              |
-| `getSync`  | `getSync<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. Reads only what is currently loaded. |
+| `getSync`  | `getSync<T = any>(key: string \| string[]): T \| undefined` | *(from `Store`)* Resolves a dotted key across elements, merged. An array of keys merges in order. Reads only what is currently loaded — it never loads for you. |
 | `get`      | `get<T = any>(key: string \| string[]): Promise<T \| undefined>` | Like `getSync`, but async — lazily loads from the filesystem on the first call (memoized), then resolves. |
 
 ### `Store`
@@ -281,7 +298,8 @@ type Element = {
 
 type MergeFn = (target: Record<string, any>, source: Record<string, any>) => Record<string, any>;
 
-type Reader = (filePath: string) => Promise<unknown>;
+type Reader = (filePath: string) => Promise<unknown>;      // used by load / loadFile
+type ReaderSync = (filePath: string) => unknown;           // used by loadSync / loadFileSync
 
 type StoreOptions = {
     mergeFn?: MergeFn;
@@ -294,6 +312,7 @@ type FSStoreOptions = StoreOptions & {
     extensions?: string[];
     naming?: INamingScheme;
     read?: Reader;
+    readSync?: ReaderSync;
 };
 
 // Contracts (interfaces, class-implemented)
@@ -311,10 +330,10 @@ interface IStore {
 
 ## 🧩 Extending
 
-Two seams are injectable through `FSStoreOptions`:
+The convention and both parser ports are injectable through `FSStoreOptions`:
 
 ```typescript
-import { FSStore, type INamingScheme, type Reader } from 'confinity';
+import { FSStore, type INamingScheme, type Reader, type ReaderSync } from 'confinity';
 
 // Custom naming: control which files match and how names are derived.
 const naming: INamingScheme = {
@@ -325,8 +344,13 @@ const naming: INamingScheme = {
 // Custom reader: e.g. parse a bespoke format, or read from memory.
 const read: Reader = async (filePath) => ({ /* parsed value */ });
 
-const store = new FSStore({ naming, read });
+// …and its synchronous twin, used by loadSync / loadFileSync.
+const readSync: ReaderSync = (filePath) => ({ /* parsed value */ });
+
+const store = new FSStore({ naming, read, readSync });
 ```
+
+Supply only the port you use: `read` covers `load`/`loadFile`, `readSync` covers `loadSync`/`loadFileSync`, and each falls back to its `locter` default independently.
 
 Need to change how values are stored, queried or merged? Subclass `Store` (or `FSStore`) — both implement `IStore`. To write a store from scratch, extend `AbstractStore` and override only the read variant(s) you can serve (`get`, `getSync`, or both); the unimplemented one throws automatically, so a sync-only or async-only store needs no boilerplate.
 
@@ -339,6 +363,39 @@ When two matches combine, `Store.merge(primary, secondary)` decides *whether* to
 - **`undefined` `primary`** → yields the existing accumulator.
 
 Because accumulated results are passed as `secondary`, the more-recently-resolved value survives for non-object values — so for `get([...keys])`, later keys take precedence for scalars.
+
+## 🔁 Migrating from v1
+
+In v1, `Container` was a single class that both loaded files and answered queries, and its `get` was synchronous. v2 splits those roles: **`FSStore` is the loadable unit**, and `Container` is now a read-only *view* over a store.
+
+```typescript
+// v1
+import { Container } from 'confinity';
+
+const container = new Container({ prefix: 'project', cwd: 'config' });
+await container.load();
+const core = container.get('server.core');        // synchronous
+
+// v2
+import { FSStore } from 'confinity';
+
+const store = new FSStore({ prefix: 'project', cwd: 'config' });
+await store.load();
+const core = store.getSync('server.core');        // synchronous read is now getSync
+```
+
+| v1                                  | v2                                                                     |
+|-------------------------------------|------------------------------------------------------------------------|
+| `new Container(options)`            | `new FSStore(options)` — same `cwd`/`prefix`/`suffix`/`extensions`/`mergeFn` fields |
+| `container.load()` / `.loadFile()`  | unchanged on `FSStore`, plus new `loadSync()` / `loadFileSync()`       |
+| `container.get(key)` *(sync)*       | `store.getSync(key)` *(sync)* — or `await store.get(key)`, which lazily loads |
+| `new Container(...)` as the read API | `new Container(store)` — read-only view; construct it **from** a store |
+| type `Options`                      | type `FSStoreOptions`                                                  |
+| type `NormalizedOptions`            | removed (internal)                                                     |
+
+> ⚠️ **The `get` rename is silent, not a compile error.** In v1 `get` returned the value; in v2 it returns a `Promise`. Existing code like `const v = container.get('x')` keeps compiling against `any`-typed results and starts yielding a pending Promise instead of your config. Search for `.get(` and decide per call site: `getSync` for the eager path, `await get` for the lazy one.
+
+New in v2 and worth knowing about: `Store` (a pure in-memory store you feed by hand), `AbstractStore` (the base for custom stores), `NamingScheme` plus the injectable `naming` / `read` / `readSync` seams, and the synchronous loaders.
 
 ## ✅ Requirements
 
