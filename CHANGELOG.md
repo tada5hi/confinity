@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.0](https://github.com/tada5hi/confinity/compare/v1.0.0...v2.0.0) (2026-07-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* `get`/`getSync` default to `T = unknown` instead of `T = any`, and `Element.data`/`MergeFn` are typed over `unknown`. An unannotated read no longer mints `any`; annotated call sites are unaffected.
+* the Container class is removed. Use createStore(options), which returns an FSStore with the same load/loadFile/get methods.
+
+### Features
+
+* add synchronous loadSync/loadFileSync loaders ([#99](https://github.com/tada5hi/confinity/issues/99)) ([56cfb05](https://github.com/tada5hi/confinity/commit/56cfb054cef4702696bdf879f081a71c991b2333))
+* harden the v2 api before release ([#100](https://github.com/tada5hi/confinity/issues/100)) ([3c380de](https://github.com/tada5hi/confinity/commit/3c380de463be1b77bb0c9e29648729e45669342d))
+
+
+### Code Refactoring
+
+* restructure into Store/FSStore with a read-only Container view ([#97](https://github.com/tada5hi/confinity/issues/97)) ([da92ca8](https://github.com/tada5hi/confinity/commit/da92ca8a8538be5909a2fcbc596d1a0cf9eeb359))
+
 ## [1.0.0](https://github.com/tada5hi/confinity/compare/v1.0.0-beta.1...v1.0.0) (2026-07-22)
 
 
