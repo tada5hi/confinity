@@ -2,7 +2,7 @@
     "name": "confinity",
     "version": "2.0.0",
     "type": "module",
-    "description": "This is a library to load configurations in the context of a multi package application",
+    "description": "Load & merge configuration across a multi-package application.",
     "author": {
         "name": "Peter Placzek",
         "email": "contact@tada5hi.net",
@@ -37,7 +37,22 @@
         "lint:fix": "npm run lint -- --fix",
         "prepare": "husky"
     },
-    "keywords": [],
+    "keywords": [
+        "config",
+        "configuration",
+        "config-loader",
+        "config-file",
+        "settings",
+        "deep-merge",
+        "dotted-path",
+        "multi-package",
+        "monorepo",
+        "esm",
+        "typescript",
+        "conf",
+        "json",
+        "yaml"
+    ],
     "publishConfig": {
         "access": "public"
     },
