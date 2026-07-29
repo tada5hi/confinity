@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/tada5hi/confinity/compare/v2.0.0...v2.0.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* **deps:** require pathtrace 2.2.2 ([#101](https://github.com/tada5hi/confinity/issues/101)) ([626fb48](https://github.com/tada5hi/confinity/commit/626fb489a84e92f62732e1411dab2c698155f8ed))
+
 ## [2.0.0](https://github.com/tada5hi/confinity/compare/v1.0.0...v2.0.0) (2026-07-29)
 
 
