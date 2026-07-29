@@ -245,6 +245,52 @@ describe('src/store', () => {
         });
     });
 
+    // These hold because path resolution rejects unsafe segments and resolves
+    // own entries only. That is pathtrace >= 2.2.1 behaviour, which is why the
+    // dependency floor is a correctness requirement rather than a formality.
+    describe('key resolution safety', () => {
+        it('should not answer an unsafe key with the whole config', () => {
+            const store = new Store();
+            store.add({ name: '', data: { db: { password: 'hunter2' } } });
+
+            expect(store.getSync('__proto__')).toBeUndefined();
+            expect(store.has('__proto__')).toBe(false);
+            expect(store.getSync('constructor')).toBeUndefined();
+            expect(store.getSync('prototype')).toBeUndefined();
+        });
+
+        it('should not resolve a neighbouring key when a segment is unsafe', () => {
+            const store = new Store();
+            store.add({ name: '', data: { a: { b: 'safe' } } });
+
+            expect(store.getSync('a.__proto__.b')).toBeUndefined();
+            expect(store.getSync('a.b')).toEqual('safe');
+        });
+
+        it.each([
+            ['toString'],
+            ['valueOf'],
+            ['hasOwnProperty'],
+        ])('should not resolve the inherited member %s as config', (key) => {
+            const store = new Store();
+            store.add({ name: '', data: { db: { password: 'hunter2' } } });
+
+            expect(store.getSync(`db.${key}`)).toBeUndefined();
+            expect(store.has(`db.${key}`)).toBe(false);
+        });
+
+        it('should still resolve ordinary keys and array entries', () => {
+            const store = new Store();
+            store.add({ name: '', data: { db: { password: 'hunter2' }, hosts: ['a', 'b'] } });
+
+            expect(store.getSync('db.password')).toEqual('hunter2');
+            expect(store.has('db.password')).toBe(true);
+            expect(store.getSync('hosts.0')).toEqual('a');
+            expect(store.has('hosts.0')).toBe(true);
+            expect(store.has('hosts.5')).toBe(false);
+        });
+    });
+
     describe('add validation', () => {
         it('should reject a non-string name', () => {
             const store = new Store();
