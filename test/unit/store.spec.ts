@@ -279,6 +279,22 @@ describe('src/store', () => {
             expect(store.has(`db.${key}`)).toBe(false);
         });
 
+        it('should resolve an accessor declared on a prototype', () => {
+            // Config exported from a `.ts`/`.mjs` module may carry class
+            // instances; an accessor on the prototype must read like a field.
+            const prototype = {};
+            Object.defineProperty(prototype, 'derived', {
+                get: () => 'computed',
+                configurable: true,
+            });
+
+            const store = new Store();
+            store.add({ name: '', data: { db: Object.create(prototype) } });
+
+            expect(store.getSync('db.derived')).toEqual('computed');
+            expect(store.has('db.derived')).toBe(true);
+        });
+
         it('should still resolve ordinary keys and array entries', () => {
             const store = new Store();
             store.add({ name: '', data: { db: { password: 'hunter2' }, hosts: ['a', 'b'] } });

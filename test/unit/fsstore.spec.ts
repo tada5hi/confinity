@@ -100,6 +100,10 @@ describe('src/store FSStore', () => {
         it('should carry a class instance through untouched', async () => {
             class Custom {
                 readonly value = 1;
+
+                get derived() {
+                    return this.value + 1;
+                }
             }
             const instance = new Custom();
             const read : Reader = async () => ({ custom: instance });
@@ -107,6 +111,11 @@ describe('src/store FSStore', () => {
             await store.loadFile('app.conf');
 
             expect(store.getSync<Record<string, unknown>>('app')?.custom).toBe(instance);
+
+            // A `.ts`/`.mjs` config may export a class instance, and an accessor
+            // on its prototype is data as far as a caller is concerned.
+            expect(store.getSync('app.custom.value')).toEqual(1);
+            expect(store.getSync('app.custom.derived')).toEqual(2);
         });
 
         it('should honor absolute paths and load arrays in parallel', async () => {

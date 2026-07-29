@@ -48,7 +48,7 @@
     "homepage": "https://github.com/tada5hi/confinity#readme",
     "dependencies": {
         "locter": "^4.1.0",
-        "pathtrace": "^2.2.1",
+        "pathtrace": "^2.2.2",
         "smob": "^1.6.2"
     },
     "devDependencies": {
