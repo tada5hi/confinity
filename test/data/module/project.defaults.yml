@@ -1,0 +1,4 @@
+default:
+  type: postgres
+host: 1.2.3.4
+password: secret

@@ -37,9 +37,31 @@ describe('src/module Container', () => {
         expect(await container.get('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
     });
 
-    it('should propagate the throw when the wrapped store has no async variant', async () => {
-        const container = new Container(new Store());
+    it('should serve the async get over an in-memory store', async () => {
+        const store = new Store();
+        store.add({ name: 'server', data: { core: { port: 4010 } } });
 
-        await expect(container.get('server')).rejects.toThrow(/asynchronous/);
+        const container = new Container(store);
+
+        await expect(container.get('server.core')).resolves.toEqual({ port: 4010 });
+    });
+
+    it('should delegate has', () => {
+        const store = new Store();
+        store.add({ name: 'server', data: { redis: false } });
+
+        const container = new Container(store);
+
+        expect(container.has('server.redis')).toBe(true);
+        expect(container.has('server.absent')).toBe(false);
+    });
+
+    it('should not expose the loading or mutation surface', () => {
+        const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+        const container = new Container(store) as unknown as Record<string, unknown>;
+
+        for (const key of ['load', 'loadSync', 'loadFile', 'loadFileSync', 'add', 'reset', 'store']) {
+            expect(container[key]).toBeUndefined();
+        }
     });
 });

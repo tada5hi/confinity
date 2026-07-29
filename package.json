@@ -21,6 +21,7 @@
             "import": "./dist/index.mjs"
         }
     },
+    "sideEffects": false,
     "files": [
         "dist"
     ],
@@ -47,7 +48,7 @@
     "homepage": "https://github.com/tada5hi/confinity#readme",
     "dependencies": {
         "locter": "^4.1.0",
-        "pathtrace": "^2.2.0",
+        "pathtrace": "^2.2.1",
         "smob": "^1.6.2"
     },
     "devDependencies": {

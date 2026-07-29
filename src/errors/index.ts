@@ -5,7 +5,7 @@
  * view the LICENSE file that was distributed with this source code.
  */
 
-export * from './constants';
-export * from './fs';
-export * from './module';
-export * from './types';
+export * from './base';
+export * from './element';
+export * from './load';
+export * from './options';

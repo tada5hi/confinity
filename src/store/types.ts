@@ -12,6 +12,10 @@ import type { Element, MergeFn } from '../types';
  * Contract for the store of named config elements. An implementation owns the
  * element collection, key↔name matching, path resolution and merge precedence.
  * Wrap one in a {@see Container} to hand out a read-only view.
+ *
+ * Both read variants are always available: `getSync` reads what is currently
+ * loaded, `get` is its asynchronous form and is the variant a store that must
+ * load first can make lazy.
  */
 export interface IStore {
     /**
@@ -20,24 +24,57 @@ export interface IStore {
     add(element: Element) : void;
 
     /**
-     * Resolve a dotted key (or array of keys), deep-merged across all elements.
+     * Resolve a dotted key, deep-merged across all elements.
      *
-     * Asynchronous read (the default); a filesystem store lazily loads on the
-     * first call. Throws if the store has no asynchronous variant (see
-     * {@see AbstractStore}).
+     * Asynchronous read — a filesystem store lazily loads on the first call.
      */
-    get<T = any>(key: string | string[]) : Promise<T | undefined>;
+    get<T = unknown>(key: string) : Promise<T | undefined>;
 
     /**
-     * Resolve a dotted key (or array of keys), deep-merged across all elements.
+     * Resolve a dotted key, deep-merged across all elements.
      *
-     * Synchronous read of whatever is currently in memory. Throws if the store
-     * has no synchronous variant (see {@see AbstractStore}).
+     * Synchronous read of whatever is currently in memory; it never loads.
      */
-    getSync<T = any>(key: string | string[]) : T | undefined;
+    getSync<T = unknown>(key: string) : T | undefined;
+
+    /**
+     * Whether any element contributes a value for the key. Synchronous, like
+     * {@see getSync}.
+     */
+    has(key: string) : boolean;
+
+    /**
+     * Every stored element, sorted by name — provenance and diagnostics.
+     */
+    elements() : readonly Element[];
+
+    /**
+     * Drop every element and return the store to its unloaded state.
+     */
+    reset() : void;
 }
 
+/**
+ * The read-only slice of {@see IStore} — what a {@see Container} needs and all
+ * it is given.
+ */
+export type ReadableStore = Pick<IStore, 'get' | 'getSync' | 'has'>;
+
+/**
+ * The outcome of resolving one key: whether any element contributed, and the
+ * merged value. Distinguishing the two is what lets `has` report a key that is
+ * explicitly configured as `null` or `false`.
+ */
+export type Resolution = {
+    exists: boolean,
+    value: unknown
+};
+
 export type StoreOptions = {
+    /**
+     * Deep-merge strategy for two matching objects. Must be pure — see
+     * {@see MergeFn}.
+     */
     mergeFn?: MergeFn
 };
 
@@ -55,10 +92,22 @@ export type Reader = (filePath: string) => Promise<unknown>;
  */
 export type ReaderSync = (filePath: string) => unknown;
 
+/**
+ * What to do when a file cannot be read or parsed.
+ *
+ * - `throw` (default) — abort the load, wrapped in a `LoadError` naming the file.
+ * - `skip` — leave that file out and keep the ones that did parse.
+ */
+export type LoadErrorMode = 'throw' | 'skip';
+
 export type FSStoreOptions = StoreOptions & {
     cwd?: string,
     prefix?: string,
     suffix?: string,
+    /**
+     * File extensions to discover, without the leading dot. Omit for the
+     * defaults; an empty array is rejected rather than silently restoring them.
+     */
     extensions?: string[],
     /**
      * Custom naming implementation. Overrides `prefix`/`suffix`/`extensions`
@@ -73,5 +122,9 @@ export type FSStoreOptions = StoreOptions & {
      * Custom synchronous reader/parser, used by `loadSync`/`loadFileSync`.
      * Overrides the default (locter's `readSync`).
      */
-    readSync?: ReaderSync
+    readSync?: ReaderSync,
+    /**
+     * How to handle a file that cannot be read or parsed. Default: `throw`.
+     */
+    onError?: LoadErrorMode
 };
