@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/tada5hi/confinity/compare/v2.0.1...v2.0.2) (2026-08-10)
+
+
+### Bug Fixes
+
+* **deps:** bump the minorandpatch group across 1 directory with 4 updates ([#108](https://github.com/tada5hi/confinity/issues/108)) ([27d7b70](https://github.com/tada5hi/confinity/commit/27d7b70bf44508316a403a9a481867b78d378fba))
+
 ## [2.0.1](https://github.com/tada5hi/confinity/compare/v2.0.0...v2.0.1) (2026-07-29)
 
 
