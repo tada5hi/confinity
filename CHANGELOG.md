@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.0.2](https://github.com/tada5hi/confinity/compare/v2.0.1...v2.0.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **deps-dev:** bump js-yaml from 4.3.0 to 4.3.2 ([#118](https://github.com/tada5hi/confinity/issues/118)) ([1fa065e](https://github.com/tada5hi/confinity/commit/1fa065ea422091b2afd85924e66cf77ad66426f9))
+* **deps-dev:** bump postcss from 8.5.22 to 8.5.26 ([#111](https://github.com/tada5hi/confinity/issues/111)) ([93a7420](https://github.com/tada5hi/confinity/commit/93a7420695e4a89611186724e778dba30572c1a0))
+* **deps-dev:** bump source-map-js from 1.2.1 to 1.2.2 ([#121](https://github.com/tada5hi/confinity/issues/121)) ([40f665f](https://github.com/tada5hi/confinity/commit/40f665fe585267a00acc6dda5a74fed6ce373f45))
+* **deps-dev:** bump vite from 8.1.5 to 8.3.5 ([#119](https://github.com/tada5hi/confinity/issues/119)) ([e18fae9](https://github.com/tada5hi/confinity/commit/e18fae996d4d3a4843ad1e00cb693a151b88ed92))
+* **deps:** bump tada5hi/monoship from 2.1.0 to 2.2.0 ([#123](https://github.com/tada5hi/confinity/issues/123)) ([7966ea4](https://github.com/tada5hi/confinity/commit/7966ea451ecd1689142cda88d8964ba5fcdb4f03))
+* **deps:** bump the minorandpatch group across 1 directory with 4 updates ([#108](https://github.com/tada5hi/confinity/issues/108)) ([27d7b70](https://github.com/tada5hi/confinity/commit/27d7b70bf44508316a403a9a481867b78d378fba))
+* **deps:** bump the minorandpatch group across 1 directory with 6 updates ([#116](https://github.com/tada5hi/confinity/issues/116)) ([32d2a6b](https://github.com/tada5hi/confinity/commit/32d2a6b5340262f53532b88f31291f07eb08041b))
+
 ## [2.0.1](https://github.com/tada5hi/confinity/compare/v2.0.0...v2.0.1) (2026-07-29)
 
 

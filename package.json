@@ -1,6 +1,6 @@
 {
     "name": "confinity",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "type": "module",
     "description": "Load & merge configuration across a multi-package application.",
     "author": {
