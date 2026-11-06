@@ -135,6 +135,7 @@ export class NamingScheme implements INamingScheme {
      */
     protected toStem(filePath: string) : string {
         let value = filePath.replace(/\\/g, '/');
+
         if (value.includes('/')) {
             value = value.substring(value.lastIndexOf('/') + 1);
         }

@@ -18,7 +18,8 @@ npm run test:coverage  # vitest with v8 coverage (thresholds enforced)
 npm run lint           # eslint (flat config)  (lint:fix to autofix)
 ```
 
-- **Node.js**: `>=22` (see `engines`; CI runs on Node 24)
+- **Node.js (package runtime)**: `>=22` (see `engines`; CI runs on Node 24)
+- **Node.js (development tooling)**: `^24.11.0 || >=26.0.0`; `.nvmrc` selects Node 24.
 - **Package manager**: npm (`package-lock.json`)
 - **Build**: [tsdown](https://tsdown.dev) (rolldown-based) — emits ESM JS + `.d.mts` types in one step
 - **Language**: TypeScript 6, `strict` + `noUncheckedIndexedAccess` (from `@tada5hi/tsconfig`), `"type": "module"`

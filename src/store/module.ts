@@ -138,17 +138,20 @@ export class Store implements IStore {
                 // Whole-store read: namespaces are ignored, every element
                 // contributes its data as-is.
                 contribute(item.data);
+
                 continue;
             }
 
             if (item.name.length === 0) {
                 // Root element — the whole key is resolved inside it.
                 this.resolveIn(item.data, key, contribute);
+
                 continue;
             }
 
             if (key === item.name) {
                 contribute(item.data);
+
                 continue;
             }
 
@@ -156,6 +159,7 @@ export class Store implements IStore {
             // `server.port` but never `serverless.port`.
             if (key.startsWith(`${item.name}.`)) {
                 this.resolveIn(item.data, key.substring(item.name.length + 1), contribute);
+
                 continue;
             }
 
@@ -164,6 +168,7 @@ export class Store implements IStore {
             // of its name that the key did not consume.
             if (item.name.startsWith(`${key}.`)) {
                 const segments = item.name.substring(key.length + 1).split('.');
+
                 contribute(this.nest(segments, item.data));
             }
         }
@@ -180,8 +185,10 @@ export class Store implements IStore {
         contribute: (value: unknown) => void,
     ) : void {
         const paths = expandPath(data, path);
+
         for (const expandedPath of paths) {
             const info = getPathInfo(data, expandedPath);
+
             if (info.exists) {
                 contribute(info.value);
             }
@@ -262,7 +269,9 @@ export class Store implements IStore {
             }
 
             const output : unknown[] = [];
+
             seen.set(value, output);
+
             for (const item of value) {
                 output.push(this.copy(item, seen));
             }
@@ -276,7 +285,9 @@ export class Store implements IStore {
             }
 
             const output : Record<string, unknown> = {};
+
             seen.set(value, output);
+
             for (const [key, item] of Object.entries(value)) {
                 output[key] = this.copy(item, seen);
             }
