@@ -12,6 +12,7 @@ import { ElementError, Store } from '../../src';
 describe('src/store', () => {
     it('should return whole data on exact-name match', () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { host: '1.1.1.1', port: 4010 } } });
 
         expect(store.getSync('server')).toEqual({ core: { host: '1.1.1.1', port: 4010 } });
@@ -19,6 +20,7 @@ describe('src/store', () => {
 
     it('should resolve a prefix match with dot-aware remainder', () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { host: '1.1.1.1', port: 4010 } } });
 
         expect(store.getSync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
@@ -27,6 +29,7 @@ describe('src/store', () => {
 
     it('should require a segment boundary to match an element name', () => {
         const store = new Store();
+
         store.add({ name: 'ba', data: { r: { x: 1 } } });
         store.add({ name: 'server', data: { less: { port: 1 } } });
 
@@ -37,6 +40,7 @@ describe('src/store', () => {
 
     it('should skip non-matching elements', () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { port: 4010 } } });
         store.add({ name: 'client', data: { web: { port: 4000 } } });
 
@@ -45,6 +49,7 @@ describe('src/store', () => {
 
     it('should return undefined for a missing key', () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { port: 4010 } } });
 
         expect(store.getSync('server.nonexistent')).toBeUndefined();
@@ -52,6 +57,7 @@ describe('src/store', () => {
 
     it('should let an empty-name element answer a full key path', () => {
         const store = new Store();
+
         store.add({ name: '', data: { app: { key: 'value' } } });
 
         expect(store.getSync('app')).toEqual({ key: 'value' });
@@ -60,6 +66,7 @@ describe('src/store', () => {
 
     it('should merge every element for an empty key', () => {
         const store = new Store();
+
         store.add({ name: 'named', data: { a: 1 } });
 
         // key.length === 0 → the whole element data is taken, namespace ignored.
@@ -68,6 +75,7 @@ describe('src/store', () => {
 
     it('should resolve wildcard segments and merge the matches', () => {
         const store = new Store();
+
         store.add({
             name: 'w',
             data: { services: { a: { port: 1 }, b: { host: 'h' } } },
@@ -78,6 +86,7 @@ describe('src/store', () => {
 
     it('should deep-merge object matches across elements', () => {
         const store = new Store();
+
         store.add({ name: '', data: { db: { host: '127.0.0.1', user: 'admin' } } });
         store.add({ name: '', data: { db: { database: 'app' } } });
 
@@ -93,9 +102,11 @@ describe('src/store', () => {
         const store = new Store({
             mergeFn: (target, source) => {
                 called = true;
+
                 return { ...source, ...target };
             },
         });
+
         store.add({ name: '', data: { db: { host: 'a' } } });
         store.add({ name: '', data: { db: { host: 'b', extra: 1 } } });
 
@@ -108,10 +119,12 @@ describe('src/store', () => {
 
     it('should sort lazily and resolve order-independently', () => {
         const first = new Store();
+
         first.add({ name: 'client', data: { v: 'c' } });
         first.add({ name: 'server', data: { v: 's' } });
 
         const second = new Store();
+
         second.add({ name: 'server', data: { v: 's' } });
         second.add({ name: 'client', data: { v: 'c' } });
 
@@ -122,6 +135,7 @@ describe('src/store', () => {
 
     it('should resolve the async get without loading', async () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { port: 4010 } } });
 
         await expect(store.get('server.core')).resolves.toEqual({ port: 4010 });
@@ -130,6 +144,7 @@ describe('src/store', () => {
     describe('nested elements', () => {
         it('should aggregate a child-named element under a parent key', () => {
             const store = new Store();
+
             store.add({ name: 'server.core', data: { host: '1.1.1.1' } });
 
             expect(store.getSync('server')).toEqual({ core: { host: '1.1.1.1' } });
@@ -138,6 +153,7 @@ describe('src/store', () => {
 
         it('should nest through several name segments', () => {
             const store = new Store();
+
             store.add({ name: 'a.b.c', data: { v: 1 } });
 
             expect(store.getSync('a')).toEqual({ b: { c: { v: 1 } } });
@@ -145,6 +161,7 @@ describe('src/store', () => {
 
         it('should let the more specific element win over the broader one', () => {
             const store = new Store();
+
             store.add({ name: 'server', data: { core: { host: 'from-broad', port: 4010 } } });
             store.add({ name: 'server.core', data: { host: 'from-specific' } });
 
@@ -153,6 +170,7 @@ describe('src/store', () => {
 
         it('should require a segment boundary to aggregate', () => {
             const store = new Store();
+
             store.add({ name: 'serverless', data: { v: 1 } });
 
             expect(store.getSync('server')).toBeUndefined();
@@ -165,6 +183,7 @@ describe('src/store', () => {
             const second = { name: 'server', data: { core: { db: { port: 1 } } } };
 
             const store = new Store();
+
             store.add(first);
             store.add(second);
 
@@ -177,9 +196,11 @@ describe('src/store', () => {
             const element = { name: 'x', data: { a: { b: 1 } } };
 
             const store = new Store();
+
             store.add(element);
 
             const value = store.getSync<Record<string, any>>('x');
+
             expect(value).toBeDefined();
             value!.injected = true;
             value!.a.b = 99;
@@ -189,6 +210,7 @@ describe('src/store', () => {
 
         it('should stay stable across repeated reads with an accumulating merger', () => {
             const store = new Store({ mergeFn: createMerger({ array: true, inPlace: false }) as any });
+
             store.add({ name: 'n', data: { hosts: ['a'] } });
             store.add({ name: 'n', data: { hosts: ['b'] } });
 
@@ -203,6 +225,7 @@ describe('src/store', () => {
             const fn = () => 1;
 
             const store = new Store();
+
             store.add({ name: 'x', data: { date, fn } });
 
             const value = store.getSync<Record<string, unknown>>('x');
@@ -213,13 +236,15 @@ describe('src/store', () => {
 
         it('should detach the elements() view from the store', () => {
             const store = new Store();
+
             store.add({
-                name: 'x', 
-                data: { a: 1 }, 
-                source: '/tmp/x.conf', 
+                name: 'x',
+                data: { a: 1 },
+                source: '/tmp/x.conf',
             });
 
             const [element] = store.elements();
+
             expect(element).toBeDefined();
             (element!.data as Record<string, unknown>).a = 99;
 
@@ -231,6 +256,7 @@ describe('src/store', () => {
     describe('has', () => {
         it('should distinguish a falsy configured value from an absent one', () => {
             const store = new Store();
+
             store.add({ name: 'server', data: { redis: false, smtp: null } });
 
             expect(store.has('server.redis')).toBe(true);
@@ -251,6 +277,7 @@ describe('src/store', () => {
     describe('key resolution safety', () => {
         it('should not answer an unsafe key with the whole config', () => {
             const store = new Store();
+
             store.add({ name: '', data: { db: { password: 'hunter2' } } });
 
             expect(store.getSync('__proto__')).toBeUndefined();
@@ -261,6 +288,7 @@ describe('src/store', () => {
 
         it('should not resolve a neighbouring key when a segment is unsafe', () => {
             const store = new Store();
+
             store.add({ name: '', data: { a: { b: 'safe' } } });
 
             expect(store.getSync('a.__proto__.b')).toBeUndefined();
@@ -273,6 +301,7 @@ describe('src/store', () => {
             ['hasOwnProperty'],
         ])('should not resolve the inherited member %s as config', (key) => {
             const store = new Store();
+
             store.add({ name: '', data: { db: { password: 'hunter2' } } });
 
             expect(store.getSync(`db.${key}`)).toBeUndefined();
@@ -283,12 +312,14 @@ describe('src/store', () => {
             // Config exported from a `.ts`/`.mjs` module may carry class
             // instances; an accessor on the prototype must read like a field.
             const prototype = {};
+
             Object.defineProperty(prototype, 'derived', {
                 get: () => 'computed',
                 configurable: true,
             });
 
             const store = new Store();
+
             store.add({ name: '', data: { db: Object.create(prototype) } });
 
             expect(store.getSync('db.derived')).toEqual('computed');
@@ -297,6 +328,7 @@ describe('src/store', () => {
 
         it('should still resolve ordinary keys and array entries', () => {
             const store = new Store();
+
             store.add({ name: '', data: { db: { password: 'hunter2' }, hosts: ['a', 'b'] } });
 
             expect(store.getSync('db.password')).toEqual('hunter2');
@@ -330,6 +362,7 @@ describe('src/store', () => {
     describe('reset', () => {
         it('should drop every element', () => {
             const store = new Store();
+
             store.add({ name: 'server', data: { core: { port: 4010 } } });
 
             store.reset();

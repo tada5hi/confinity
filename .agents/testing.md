@@ -2,7 +2,7 @@
 
 ## Setup
 
-- **Runner**: [Vitest](https://vitest.dev) 4 (config at `test/vitest.config.ts`).
+- **Runner**: [Vitest](https://vitest.dev) 5 (config at `test/vitest.config.ts`).
 - **Test location**: `test/unit/**/*.{test,spec}.{js,ts}` (the `include` glob).
 - **Fixtures**: `test/data/` — real config files loaded by the specs.
 - **Coverage**: v8 provider (`@vitest/coverage-v8`).

@@ -23,9 +23,9 @@ import type { Element } from '../types';
 import { DEFAULT_EXTENSIONS } from './constants';
 import { Store } from './module';
 import type {
-    FSStoreOptions, 
-    LoadErrorMode, 
-    Reader, 
+    FSStoreOptions,
+    LoadErrorMode,
+    Reader,
     ReaderSync,
 } from './types';
 
@@ -62,7 +62,9 @@ function sanitize(input: unknown, seen: Map<object, unknown> = new Map()) : unkn
         }
 
         const output : unknown[] = [];
+
         seen.set(input, output);
+
         for (const item of input) {
             output.push(sanitize(item, seen));
         }
@@ -79,6 +81,7 @@ function sanitize(input: unknown, seen: Map<object, unknown> = new Map()) : unkn
     }
 
     const prototype = Object.getPrototypeOf(input);
+
     if (
         prototype !== null &&
         prototype !== Object.prototype
@@ -87,6 +90,7 @@ function sanitize(input: unknown, seen: Map<object, unknown> = new Map()) : unkn
     }
 
     const output : Record<string, unknown> = {};
+
     seen.set(input, output);
 
     for (const [key, value] of Object.entries(input)) {
@@ -185,6 +189,7 @@ export class FSStore extends Store {
                     },
                     (error) => {
                         this.loading = undefined;
+
                         throw error;
                     },
                 );
@@ -280,6 +285,7 @@ export class FSStore extends Store {
 
     protected async fromDirectories(input?: string | string[]) : Promise<Element[]> {
         const directories = this.resolveDirectories(input);
+
         if (directories.length === 0) {
             return [];
         }
@@ -289,6 +295,7 @@ export class FSStore extends Store {
 
     protected fromDirectoriesSync(input?: string | string[]) : Element[] {
         const directories = this.resolveDirectories(input);
+
         if (directories.length === 0) {
             return [];
         }
@@ -305,21 +312,22 @@ export class FSStore extends Store {
             filePaths.map(async (filePath) => {
                 try {
                     return {
-                        filePath, 
-                        value: await this.reader(filePath), 
-                        error: undefined, 
+                        filePath,
+                        value: await this.reader(filePath),
+                        error: undefined,
                     };
                 } catch (error) {
                     return {
-                        filePath, 
-                        value: undefined, 
-                        error, 
+                        filePath,
+                        value: undefined,
+                        error,
                     };
                 }
             }),
         );
 
         const elements : Element[] = [];
+
         for (const outcome of outcomes) {
             if (typeof outcome.error !== 'undefined') {
                 if (this.onError === 'skip') {
@@ -330,6 +338,7 @@ export class FSStore extends Store {
             }
 
             const element = this.toElement(outcome.filePath, outcome.value);
+
             if (element) {
                 elements.push(element);
             }
@@ -355,6 +364,7 @@ export class FSStore extends Store {
             }
 
             const element = this.toElement(filePath, raw);
+
             if (element) {
                 elements.push(element);
             }

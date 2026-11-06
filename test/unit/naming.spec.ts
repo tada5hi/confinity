@@ -16,6 +16,7 @@ const EXTENSIONS = ['conf', 'yml', 'yaml'];
  */
 function globToRegExp(pattern: string) : RegExp {
     let out = '';
+
     for (const ch of pattern) {
         if (ch === '*') {
             out += '[^/]*';

@@ -46,7 +46,7 @@
 
   These interfaces are what callers inject through `FSStoreOptions` (`naming?: INamingScheme`), so the concrete class can be swapped.
 
-- An interface must promise only what every implementation can actually deliver. `IStore` used to sit on an `AbstractStore` base whose read methods threw "unsupported" by default; that was removed, because a capability difference expressed as a runtime throw is invisible to the compiler and misleads every caller. Where a consumer needs less than the full contract, narrow with `Pick` (`ReadableStore = Pick<IStore, 'get' | 'getSync' | 'has'>`) rather than adding a variant that throws.
+- An interface must promise only what every implementation can actually deliver. Every `IStore` implementation supports the async and sync read methods its contract declares. Where a consumer needs less than the full contract, narrow with `Pick` (`ReadableStore = Pick<IStore, 'get' | 'getSync' | 'has'>`) rather than adding a variant that throws.
 
 ## File Organization
 
@@ -87,7 +87,7 @@ The commit `type` drives the next release version — release-please reads the h
 
 - Automated via **release-please** (`release-please-config.json`, `.release-please-manifest.json`), run by `.github/workflows/release.yml` on push to `master`; publishing is handled by `tada5hi/monoship`.
 - `release-please-config.json` uses `release-type: node`, `include-v-in-tag: true` (tags look like `v1.0.0`), and `bump-minor-pre-major: true`.
-- Version bumps are computed from the commit history (Conventional Commit types) — the temporary `release-as` pin used to cut `v1.0.0` has been removed.
+- Version bumps are computed from the commit history (Conventional Commit types).
 - Do not hand-edit `version` in `package.json`, `CHANGELOG.md`, or `.release-please-manifest.json` — release-please manages them via its release PR.
 
 ## CI/CD

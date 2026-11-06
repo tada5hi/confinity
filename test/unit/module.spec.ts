@@ -11,6 +11,7 @@ import { Container, FSStore, Store } from '../../src';
 describe('src/module Container', () => {
     it('should expose a read-only sync getSync over a wrapped store', () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { port: 4010 } } });
 
         const container = new Container(store);
@@ -21,6 +22,7 @@ describe('src/module Container', () => {
 
     it('should reflect a wrapped fs store after it is loaded', async () => {
         const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
         await store.load();
 
         const container = new Container(store);
@@ -39,6 +41,7 @@ describe('src/module Container', () => {
 
     it('should serve the async get over an in-memory store', async () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { core: { port: 4010 } } });
 
         const container = new Container(store);
@@ -48,6 +51,7 @@ describe('src/module Container', () => {
 
     it('should delegate has', () => {
         const store = new Store();
+
         store.add({ name: 'server', data: { redis: false } });
 
         const container = new Container(store);

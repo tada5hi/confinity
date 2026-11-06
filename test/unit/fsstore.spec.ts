@@ -8,9 +8,9 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-    DATA_EXTENSIONS, 
-    FSStore, 
-    LoadError, 
+    DATA_EXTENSIONS,
+    FSStore,
+    LoadError,
     OptionsError,
 } from '../../src';
 import type { INamingScheme, Reader, ReaderSync } from '../../src';
@@ -26,6 +26,7 @@ describe('src/store FSStore', () => {
                 cwd: '/base',
                 read,
             });
+
             await store.loadFile('project.server.conf');
 
             expect(store.getSync('server')).toEqual({ a: 1 });
@@ -52,6 +53,7 @@ describe('src/store FSStore', () => {
                 cwd: '/base',
                 read,
             });
+
             await store.loadFile('project.server.conf');
 
             expect(store.getSync('server')).toEqual({ default: { host: '1.1.1.1' }, other: 2 });
@@ -64,6 +66,7 @@ describe('src/store FSStore', () => {
                 cwd: '/base',
                 read,
             });
+
             await store.loadFile('production.conf');
 
             expect(store.getSync('server.core')).toEqual({ port: 4010 });
@@ -74,6 +77,7 @@ describe('src/store FSStore', () => {
                 '{"__proto__":{"polluted":true},"nested":{"constructor":1,"keep":2}}',
             );
             const store = new FSStore({ cwd: '/base', read });
+
             await store.loadFile('app.conf');
 
             const value = store.getSync<Record<string, any>>('app');
@@ -86,12 +90,14 @@ describe('src/store FSStore', () => {
         it('should survive a cyclic value from a module config', async () => {
             const read : Reader = async () => {
                 const cyclic : Record<string, any> = { name: 'root', list: [1] };
+
                 cyclic.self = cyclic;
                 cyclic.list.push(cyclic.list);
 
                 return cyclic;
             };
             const store = new FSStore({ cwd: '/base', read });
+
             await store.loadFile('app.conf');
 
             expect(store.getSync<Record<string, unknown>>('app')?.name).toEqual('root');
@@ -108,6 +114,7 @@ describe('src/store FSStore', () => {
             const instance = new Custom();
             const read : Reader = async () => ({ custom: instance });
             const store = new FSStore({ cwd: '/base', read });
+
             await store.loadFile('app.conf');
 
             expect(store.getSync<Record<string, unknown>>('app')?.custom).toBe(instance);
@@ -125,6 +132,7 @@ describe('src/store FSStore', () => {
                 cwd: '/base',
                 read,
             });
+
             await store.loadFile([
                 path.resolve('/abs/project.client.conf'),
                 'project.server.conf',
@@ -139,6 +147,7 @@ describe('src/store FSStore', () => {
     describe('module fixtures', () => {
         it('should unwrap a module default export', async () => {
             const store = new FSStore({ prefix: 'project', cwd: MODULE_DATA });
+
             await store.load();
 
             expect(store.getSync('esm')).toEqual({ server: { core: { host: 'from-module' } } });
@@ -146,6 +155,7 @@ describe('src/store FSStore', () => {
 
         it('should keep a data file`s literal `default` key and its siblings', async () => {
             const store = new FSStore({ prefix: 'project', cwd: MODULE_DATA });
+
             await store.load();
 
             expect(store.getSync('defaults')).toEqual({
@@ -172,6 +182,7 @@ describe('src/store FSStore', () => {
     describe('friendly options + discovery against fixtures', () => {
         it('should discover prefixed files across a relative directory', async () => {
             const store = new FSStore({ prefix: 'project' });
+
             await store.load('test/data');
 
             expect(store.getSync('server.core')).toEqual({ host: '1.1.1.1', port: 4010 });
@@ -180,6 +191,7 @@ describe('src/store FSStore', () => {
 
         it('should default discovery to the configured cwd and skip non-object files', async () => {
             const store = new FSStore({ cwd: path.resolve('test/data') });
+
             // Every file is matched (no prefix/suffix); scalar.yml (42) is skipped.
             await store.load();
 
@@ -192,6 +204,7 @@ describe('src/store FSStore', () => {
                 extensions: ['.yml', 'yaml'],
                 cwd: 'test/data',
             });
+
             await store.load();
 
             expect(store.getSync<Record<string, unknown>>('client.web')?.port).toEqual(4000);
@@ -228,6 +241,7 @@ describe('src/store FSStore', () => {
                 suffix: 'server',
                 cwd: 'test/data',
             });
+
             await store.load();
 
             // project.server.conf has no middle segment → not matched.
@@ -236,6 +250,7 @@ describe('src/store FSStore', () => {
 
         it('should derive names from a suffix-only pattern', async () => {
             const store = new FSStore({ suffix: 'server', cwd: 'test/data' });
+
             await store.load();
 
             expect(store.getSync<Record<string, unknown>>('project.core')?.port).toEqual(4010);
@@ -248,9 +263,11 @@ describe('src/store FSStore', () => {
                 cwd: 'test/data',
                 mergeFn: (target, source) => {
                     called = true;
+
                     return { ...source, ...target };
                 },
             });
+
             await store.loadFile([
                 'project.conf',
                 'project.server.conf',
@@ -268,6 +285,7 @@ describe('src/store FSStore', () => {
                 toName: () => 'custom',
             };
             const store = new FSStore({ naming, cwd: 'test/data' });
+
             await store.load();
 
             expect(store.getSync('custom.core.port')).toEqual(4010);
@@ -313,6 +331,7 @@ describe('src/store FSStore', () => {
 
         it('should record the source of each element', async () => {
             const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
             await store.load();
 
             for (const element of store.elements()) {
@@ -321,6 +340,7 @@ describe('src/store FSStore', () => {
             }
 
             const server = store.elements().find((element) => element.name === 'server');
+
             expect(path.basename(server?.source as string)).toEqual('project.server.conf');
         });
 
@@ -337,7 +357,9 @@ describe('src/store FSStore', () => {
             const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
 
             await store.load();
+
             const first = store.elements().length;
+
             await store.load();
 
             expect(store.elements()).toHaveLength(first);
@@ -365,9 +387,9 @@ describe('src/store FSStore', () => {
             let value = 1;
             const read : Reader = async () => ({ value });
             const store = new FSStore({
-                prefix: 'project', 
-                cwd: '/base', 
-                read, 
+                prefix: 'project',
+                cwd: '/base',
+                read,
             });
 
             await store.loadFile('project.server.conf');
@@ -393,9 +415,9 @@ describe('src/store FSStore', () => {
                 throw new Error('boom');
             };
             const store = new FSStore({
-                prefix: 'project', 
-                cwd: '/base', 
-                read, 
+                prefix: 'project',
+                cwd: '/base',
+                read,
             });
 
             await expect(store.loadFile('project.server.conf')).rejects.toThrow(LoadError);
@@ -410,9 +432,9 @@ describe('src/store FSStore', () => {
                 throw cause;
             };
             const store = new FSStore({
-                prefix: 'project', 
-                cwd: '/base', 
-                read, 
+                prefix: 'project',
+                cwd: '/base',
+                read,
             });
 
             await expect(store.loadFile('project.server.conf')).rejects.toMatchObject({ cause });
@@ -468,9 +490,9 @@ describe('src/store FSStore', () => {
                 throw new Error('boom');
             };
             const store = new FSStore({
-                prefix: 'project', 
-                cwd: '/base', 
-                readSync, 
+                prefix: 'project',
+                cwd: '/base',
+                readSync,
             });
 
             expect(() => store.loadFileSync('project.server.conf')).toThrow(LoadError);
@@ -494,6 +516,7 @@ describe('src/store FSStore', () => {
             let reads = 0;
             const read : Reader = async () => {
                 reads += 1;
+
                 return { ok: true };
             };
             const store = new FSStore({
@@ -527,6 +550,7 @@ describe('src/store FSStore', () => {
             let reads = 0;
             const read : Reader = async () => {
                 reads += 1;
+
                 return { ok: true };
             };
             const store = new FSStore({
@@ -536,6 +560,7 @@ describe('src/store FSStore', () => {
             });
 
             await store.load();
+
             const afterEager = reads;
 
             await store.get('a');
@@ -547,6 +572,7 @@ describe('src/store FSStore', () => {
             let attempts = 0;
             const read : Reader = async () => {
                 attempts += 1;
+
                 if (attempts === 1) {
                     throw new Error('boom');
                 }
@@ -585,9 +611,11 @@ describe('src/store FSStore', () => {
     describe('sync loading', () => {
         it('should loadSync from a directory to parity with async load', async () => {
             const sync = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
             sync.loadSync();
 
             const async = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
             await async.load();
 
             // The sync and async loaders must agree on the merged result.
@@ -598,6 +626,7 @@ describe('src/store FSStore', () => {
 
         it('should loadFileSync explicit file(s), deriving names via the scheme', () => {
             const store = new FSStore({ prefix: 'project', cwd: 'test/data' });
+
             store.loadFileSync([
                 'project.conf',
                 'project.server.conf',
@@ -615,6 +644,7 @@ describe('src/store FSStore', () => {
                     cwd: '/base',
                     readSync,
                 });
+
                 store.loadFileSync('project.server.conf');
 
                 expect(store.getSync('server')).toEqual({ a: 1 });
@@ -639,6 +669,7 @@ describe('src/store FSStore', () => {
                     cwd: '/base',
                     readSync,
                 });
+
                 store.loadFileSync([
                     path.resolve('/abs/project.client.conf'),
                     'project.server.conf',
@@ -667,10 +698,12 @@ describe('src/store FSStore', () => {
             // not `readSync` — so spy on both to actually observe no re-load.
             const read : Reader = async () => {
                 asyncReads += 1;
+
                 return { ok: true };
             };
             const readSync : ReaderSync = () => {
                 reads += 1;
+
                 return { ok: true };
             };
             const store = new FSStore({
@@ -681,6 +714,7 @@ describe('src/store FSStore', () => {
             });
 
             store.loadSync();
+
             const afterEager = reads;
 
             // loaded is already set, so get() does not re-load asynchronously.
