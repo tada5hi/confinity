@@ -20,15 +20,6 @@ npm run test -- -t "should load explicit files"
 
 Both scripts pass `--run` so Vitest executes once and exits (no watch mode) — matching CI.
 
-## Vitest Configuration Highlights
-
-From `test/vitest.config.ts`:
-
-- `test.include`: `['test/unit/**/*.{test,spec}.{js,ts}']`
-- `test.coverage.provider`: `'v8'`
-- `test.coverage.include`: `['src/**/*.{ts,tsx,js,jsx}']`
-- `test.coverage.thresholds`: `branches`, `functions`, `lines`, `statements` all **80**
-
 ## Test Layers
 
 ### Unit Tests
@@ -42,7 +33,6 @@ Four suites test each collaborator at its own boundary:
 | `test/unit/fsstore.spec.ts`  | `FSStore`   | The friendly constructor (extension normalization + validation, `mergeFn`/`naming`/`read` injection) + discovery/`load`/`loadFile`/`get`. Against real `test/data/` fixtures, real **module fixtures** in `test/data/module/` (the `.default` unwrap is brand-based, so it can only be exercised through a real file), and a stubbed `Reader` port for skip/name/path/`__proto__`/cycle handling. Plus **load reporting** (paths returned, empty for a missing directory, `source` recorded), **idempotency** (repeated loads, a directory named twice, a lazy `get` racing `load`, re-load refreshes), **error handling** (`LoadError` with `cause`, `onError: 'skip'`), the **async / lazy** path (memoized, and a *failed* load retried), `reset`, and the **sync twins**. |
 | `test/unit/module.spec.ts`   | `Container` | The read-only wrapper exposes `getSync`/`get`/`has` over a wrapped `Store`, reflects an `FSStore` after it has been loaded, delegates the lazy `get`, and **does not expose** `load`/`add`/`reset` or the wrapped store. |
 
-There is no `loader.spec.ts` — the former `Loader` was folded into `FSStore`, and its tests live in `fsstore.spec.ts`. Together the four suites run ~116 tests at ~99% coverage.
 
 ## Fixtures (`test/data/`)
 
